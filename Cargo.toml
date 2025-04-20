@@ -1,0 +1,27 @@
+[package]
+name = "rex"
+version = "0.1.0"
+edition = "2021"
+
+authors = ["Nicolas Woltmann"]
+description = "Run commands or programs automatically when files change"
+categories = ["command-line-utilities"]
+repository = "https://github.com/nobriot/rex"
+license = "MIT"
+keywords = []
+resolver = "2"
+
+[dependencies]
+clap = {version = "4.5.36", features = ["derive"]} 
+log = "0.4.27"
+notify = "8.0.0"
+env_logger = "0.11.8"
+colored = "3.0.0"
+thiserror = "2.0.12"
+anyhow = "1.0.98"
+shell-words = "1.1.0"
+
+[profile.release]
+lto = true
+strip = true
+codegen-units = 1
