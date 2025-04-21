@@ -15,8 +15,9 @@ use args::Args;
 pub mod errors;
 use errors::ProgramErrors;
 
-pub mod command_queue;
-use command_queue::CommandQueue;
+pub mod command;
+use command::Queue;
+use command::QueueMessage;
 
 macro_rules! is_some_or_return {
     ($opt:expr, $ret:expr) => {
@@ -71,11 +72,10 @@ fn run() -> Result<ProgramErrors> {
         register_watch_for_file(&mut watcher, f)?;
     }
 
-    let mut command_queue = CommandQueue::new(&args)?;
+    let command_queue_tx = Queue::new(&args)?;
 
     // test
     loop {
-        command_queue.execute()?;
         match rx.recv() {
             Ok(event) if event.is_ok() => {
                 let event = event.unwrap();
@@ -89,7 +89,7 @@ fn run() -> Result<ProgramErrors> {
                             continue;
                         }
 
-                        command_queue.push(p);
+                        command_queue_tx.send(QueueMessage::AddFile(p.clone()))?;
                     }
                 }
             }
@@ -103,40 +103,31 @@ fn register_watch_for_file(
     watcher: &mut Box<dyn Watcher>,
     file: &str,
 ) -> Result<(), ProgramErrors> {
-    let p = path::absolute(file)
-        .expect("Could not determine abs path")
-        .canonicalize();
+    let p = path::absolute(file).expect("Could not determine abs path").canonicalize();
 
     if let Err(e) = p {
         return Err(ProgramErrors::FileError(file.to_string(), e.to_string()));
     }
     let p = p.unwrap();
 
-    let watch_mode = if p.is_dir() {
-        RecursiveMode::Recursive
-    } else {
-        RecursiveMode::NonRecursive
-    };
+    let watch_mode =
+        if p.is_dir() { RecursiveMode::Recursive } else { RecursiveMode::NonRecursive };
 
     // Check the files we have to monitor
-    // Register a watch on the parent it is a file. (see explanation in Watcher.watch)
+    // Register a watch on the parent it is a file. (see explanation in
+    // Watcher.watch)
     //
-    // On some platforms, if the `path` is renamed or removed while being watched, behaviour may
-    // be unexpected. See discussions in [\#165](https://github.com/notify-rs/notify/issues/165) and [\#166](https://github.com/notify-rs/notify/issues/166). If less surprising behaviour is wanted
-    // one may non-recursively watch the *parent* directory as well and manage related events.
+    // On some platforms, if the `path` is renamed or removed while being watched,
+    // behaviour may be unexpected. See discussions in [\#165](https://github.com/notify-rs/notify/issues/165) and [\#166](https://github.com/notify-rs/notify/issues/166). If less surprising behaviour is wanted
+    // one may non-recursively watch the *parent* directory as well and manage
+    // related events.
     let watch_target = if p.is_dir() {
         p.clone()
     } else {
-        p.parent()
-            .expect("Could not find parent dir for p")
-            .to_path_buf()
+        p.parent().expect("Could not find parent dir for p").to_path_buf()
     };
 
-    debug!(
-        "Registering a watch for {:?} / {:?}",
-        watch_target.as_path(),
-        watch_mode
-    );
+    info!("Registering a watch for {:?} / {:?}", watch_target.as_path(), watch_mode);
     watcher.watch(watch_target.as_path(), watch_mode).unwrap();
 
     Ok(())
@@ -145,10 +136,7 @@ fn register_watch_for_file(
 /// Checks if the filename extensions is part of our allow-list
 /// Returns true if the allow-list is empty
 fn extension_matches(filename: &PathBuf, allowed_extensions: &[String]) -> bool {
-    debug!(
-        "extension_matches : {:?} {:?}",
-        filename, allowed_extensions
-    );
+    //debug!("extension_matches : {:?} {:?}", filename, allowed_extensions);
 
     if allowed_extensions.is_empty() {
         return true;

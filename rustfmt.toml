@@ -1,0 +1,7 @@
+style_edition = "2024"
+max_width = 100
+chain_width = 80
+use_small_heuristics = "Max"
+
+comment_width = 80
+wrap_comments = true
