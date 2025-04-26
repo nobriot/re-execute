@@ -3,7 +3,7 @@ use clap::Parser;
 use colored::Colorize;
 use log::*;
 use notify::*;
-use std::path::{self, PathBuf};
+use std::path::{PathBuf, absolute};
 use std::time::Duration;
 
 // static PROGRAM_NAME: &str = env!("CARGO_PKG_NAME");
@@ -88,7 +88,7 @@ fn register_watch_for_file(
     watcher: &mut Box<dyn Watcher>,
     file: &str,
 ) -> Result<(), ProgramErrors> {
-    let p = path::absolute(file).expect("Could not determine abs path").canonicalize();
+    let p = absolute(file).expect("Could not determine abs path").canonicalize();
 
     if let Err(e) = p {
         return Err(ProgramErrors::FileError(file.to_string(), e.to_string()));
