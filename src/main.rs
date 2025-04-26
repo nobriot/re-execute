@@ -15,25 +15,12 @@ use args::Args;
 pub mod errors;
 use errors::ProgramErrors;
 
+pub mod files;
+use files::utils::extension_matches;
+
 pub mod command;
 use command::Queue;
 use command::QueueMessage;
-
-macro_rules! is_some_or_return {
-    ($opt:expr, $ret:expr) => {
-        if !$opt.is_some() {
-            return $ret;
-        }
-    };
-}
-
-macro_rules! is_ok_or_return {
-    ($res:expr, $ret:expr) => {
-        if !$res.is_ok() {
-            return $ret;
-        }
-    };
-}
 
 fn main() {
     match run() {
@@ -49,15 +36,13 @@ fn run() -> Result<ProgramErrors> {
     // Logging for debug
     env_logger::builder().format_timestamp_millis().init();
 
-    let args = Args::parse();
+    let mut args = Args::parse();
     debug!("We received {:?}", args);
 
-    let files = if args.files.is_empty() {
-        vec![String::from(".")]
-    } else {
-        // TODO: Remove clone
-        args.files.clone()
-    };
+    if args.files.is_empty() {
+        args.files.push(String::from("."))
+    }
+    let args = args;
 
     let (tx, rx) = std::sync::mpsc::channel();
     let mut watcher: Box<dyn Watcher> = if RecommendedWatcher::kind() == WatcherKind::PollWatcher {
@@ -68,7 +53,7 @@ fn run() -> Result<ProgramErrors> {
         Box::new(RecommendedWatcher::new(tx, Config::default()).unwrap())
     };
 
-    for f in &files {
+    for f in &args.files {
         register_watch_for_file(&mut watcher, f)?;
     }
 
@@ -81,11 +66,11 @@ fn run() -> Result<ProgramErrors> {
                 let event = event.unwrap();
                 //println!("Received Event: {:?}", event);
                 if let EventKind::Modify(_) = event.kind {
-                    debug!("File modified: {:?}", event.paths);
+                    // debug!("File modified: {:?}", event.paths);
 
                     for p in &event.paths {
                         if !extension_matches(p, args.extensions.as_slice()) {
-                            debug!("Ignoring update for {:?}", p);
+                            // debug!("Ignoring update for {:?}", p);
                             continue;
                         }
 
@@ -131,22 +116,4 @@ fn register_watch_for_file(
     watcher.watch(watch_target.as_path(), watch_mode).unwrap();
 
     Ok(())
-}
-
-/// Checks if the filename extensions is part of our allow-list
-/// Returns true if the allow-list is empty
-fn extension_matches(filename: &PathBuf, allowed_extensions: &[String]) -> bool {
-    //debug!("extension_matches : {:?} {:?}", filename, allowed_extensions);
-
-    if allowed_extensions.is_empty() {
-        return true;
-    }
-
-    let ext = filename.extension();
-    is_some_or_return!(ext, false);
-    let ext = ext.unwrap().to_owned().into_string();
-    is_ok_or_return!(ext, false);
-    let ext = ext.unwrap();
-
-    allowed_extensions.contains(&ext)
 }

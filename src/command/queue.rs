@@ -1,11 +1,15 @@
-use crate::args::{Args, FILES_SUBSTITUTION, FILE_SUBSTITUTION};
+use crate::args::{Args, FILE_SUBSTITUTION, FILES_SUBSTITUTION};
 use crate::command::QueueMessage;
 use crate::errors::ProgramErrors;
 use anyhow::Result;
+use colored::Colorize;
 use log::*;
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::io::Read;
+use std::path::PathBuf;
+use std::process::{Command, Stdio};
+
+use super::exit_code;
 
 pub struct Queue {
     /// Command to execute
@@ -62,7 +66,11 @@ impl Queue {
         loop {
             match self.rx.try_recv() {
                 Ok(QueueMessage::Abort) => break,
-                Ok(QueueMessage::RestartBackoff) => todo!(),
+                Ok(QueueMessage::RestartBackoff) => {
+                    if !self.files.is_empty() {
+                        self.last_update = Some(std::time::Instant::now());
+                    }
+                }
                 Ok(QueueMessage::AddFile(p)) => {
                     debug!("Adding file: {:?}", p);
                     let _ = self.files.insert(p);
@@ -91,10 +99,15 @@ impl Queue {
 
     pub fn execute(&mut self) -> Result<(), ProgramErrors> {
         if self.files.is_empty() {
-            warn!("We screwed up, and tried to execute with empty file queue");
+            eprintln!(
+                "{}: {:?}",
+                "error".red(),
+                "Tried to execute command with an empty file queue"
+            );
             return Ok(());
         }
 
+        // test
         let p: Vec<PathBuf> = if self.single_file_execution {
             let path = self.files.iter().next().unwrap().clone();
             self.files.remove(&path);
@@ -111,18 +124,22 @@ impl Queue {
                 a => command.args([a]),
             };
         }
+        command.stdout(Stdio::piped());
+        command.stderr(Stdio::piped());
 
         info!("Running command: '{:?}'", command);
+
         let mut child = command.spawn()?;
 
         let status = child.wait()?;
 
-        if let Some(output) = child.stdout.take() {
+        if let Some(mut stdout) = child.stdout.take() {
+            let mut output = String::new();
+            let _ = stdout.read_to_string(&mut output);
             println!("Command output: {:?}", output);
-            // Handle CommandOutputPolicy::Pipe
-            // discard(output);
         }
-        println!("status:  -> {:?}", status);
+
+        println!("Exit Code: {:?}", exit_code::get_exit_code(status));
 
         Ok(())
     }
