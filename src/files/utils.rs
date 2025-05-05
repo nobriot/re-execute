@@ -21,7 +21,7 @@ macro_rules! is_ok_or_return {
 pub fn should_be_ignored(filename: &PathBuf, args: &Args) -> bool {
     extension_matches(filename, args.extensions.as_slice())
         && !is_git_ignored(filename)
-        && !is_hidden(filename)
+        && (args.hidden || !is_hidden(filename))
 }
 
 /// Checks if the filename extensions is part of our allow-list
@@ -45,12 +45,45 @@ pub fn extension_matches(filename: &PathBuf, allowed_extensions: &[String]) -> b
 }
 
 pub fn is_git_ignored(filename: &PathBuf) -> bool {
-    todo!();
+    false
+    // TODO: todo!();
 }
 
 /// Checks if the file or any parent directory is hidden
 pub fn is_hidden(filename: &PathBuf) -> bool {
-    todo!();
+    let mut path = filename.clone();
+
+    loop {
+        if is_file_hidden(&path) {
+            return true;
+        }
+        if !path.pop() {
+            break;
+        }
+    }
+
+    false
+}
+
+/// Checks if a single file is hidden.
+fn is_file_hidden(filename: &PathBuf) -> bool {
+    if let Some(basename) = filename.file_name() {
+        if basename.to_string_lossy().starts_with(".") {
+            return true;
+        }
+    }
+
+    #[cfg(windows)]
+    {
+        if let Ok(metadata) = fs::metadata(filename) {
+            const FILE_ATTRIBUTE_HIDDEN: u32 = 0x2;
+            if metadata.file_attribute() && FILE_ATTRIBUTE_HIDDEN != 0 {
+                return true;
+            }
+        }
+    }
+
+    false
 }
 
 #[cfg(test)]
@@ -63,19 +96,19 @@ mod tests {
     fn test_extension_matches_exact() {
         let filename =
             PathBuf::from_str("/home/test/my-file.rs").expect("Could not create PathBuf");
-        assert!(extension_matches(&filename, &[String::from("rs")]))
+        assert!(extension_matches(&filename, &[String::from("rs")]));
     }
 
     #[test]
     fn test_extension_matches_empty_allow_list() {
         let filename = PathBuf::from_str("file.txt").expect("Could not create PathBuf");
-        assert!(extension_matches(&filename, &[]))
+        assert!(extension_matches(&filename, &[]));
     }
 
     #[test]
     fn test_extension_matches_subset() {
         let filename = PathBuf::from_str("file.txt").expect("Could not create PathBuf");
-        assert!(!extension_matches(&filename, &[String::from("xt"), String::from("tx")]))
+        assert!(!extension_matches(&filename, &[String::from("xt"), String::from("tx")]));
     }
 
     #[test]
@@ -87,24 +120,43 @@ mod tests {
             String::from(""),
             String::from("txt.ignored"),
             String::from("gnored")
-        ]))
+        ]));
     }
 
     #[test]
     fn test_extension_matches_double_extension_happy_case() {
         let filename = PathBuf::from_str(".txt.ignored").expect("Could not create PathBuf");
-        assert!(extension_matches(&filename, &[String::from("txt"), String::from("ignored")]))
+        assert!(extension_matches(&filename, &[String::from("txt"), String::from("ignored")]));
     }
 
     #[test]
     fn test_extension_matches_no_ext() {
         let filename = PathBuf::from_str("path/to/my_file").expect("Could not create PathBuf");
-        assert!(extension_matches(&filename, &[String::from("")]))
+        assert!(extension_matches(&filename, &[String::from("")]));
     }
 
     #[test]
     fn test_extension_matches_case() {
         let filename = PathBuf::from_str(".txt.jPeG").expect("Could not create PathBuf");
-        assert!(extension_matches(&filename, &[String::from("jpeg")]))
+        assert!(extension_matches(&filename, &[String::from("jpeg")]));
+    }
+
+    #[test]
+    fn test_is_hidden() {
+        let filename = PathBuf::from_str("/a/path/.with/hidden_dir/file.jPeG").expect("test error");
+        assert!(is_hidden(&filename));
+    }
+
+    #[test]
+    fn test_is_hidden_file_itself() {
+        let filename = PathBuf::from_str("/a/path/with/hidden_dir/.file.txt").expect("test error");
+        assert!(is_hidden(&filename));
+    }
+
+    #[test]
+    fn test_is_not_hidden() {
+        let filename =
+            PathBuf::from_str("/a/path/with/not_hidden_dir/file.txt").expect("test error");
+        assert!(!is_hidden(&filename));
     }
 }

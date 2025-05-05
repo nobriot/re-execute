@@ -16,7 +16,7 @@ pub mod errors;
 use errors::ProgramErrors;
 
 pub mod files;
-use files::utils::extension_matches;
+use files::utils::{extension_matches, should_be_ignored};
 
 pub mod command;
 use command::Queue;
@@ -69,7 +69,7 @@ fn run() -> Result<ProgramErrors> {
                     // debug!("File modified: {:?}", event.paths);
 
                     for p in &event.paths {
-                        if !extension_matches(p, args.extensions.as_slice()) {
+                        if !should_be_ignored(p, &args) {
                             // debug!("Ignoring update for {:?}", p);
                             continue;
                         }
@@ -112,7 +112,7 @@ fn register_watch_for_file(
         p.parent().expect("Could not find parent dir for p").to_path_buf()
     };
 
-    info!("Registering a watch for {:?} / {:?}", watch_target.as_path(), watch_mode);
+    info!("Registering a {:?} watch for {:?}", watch_mode, watch_target.as_path());
     watcher.watch(watch_target.as_path(), watch_mode).unwrap();
 
     Ok(())
