@@ -17,7 +17,7 @@ pub struct Queue {
     /// Raw command arguments, may contains FILE placeholders
     args: Vec<String>,
     /// Files that have been updated - pending command execution
-    files: HashSet<PathBuf>,
+    files: HashSet<(PathBuf, PathBuf)>,
     /// Indicates if we execute the command 1 time per modified file
     single_file_execution: bool,
     rx: std::sync::mpsc::Receiver<QueueMessage>,
@@ -71,9 +71,9 @@ impl Queue {
                         self.last_update = Some(std::time::Instant::now());
                     }
                 }
-                Ok(QueueMessage::AddFile(p)) => {
-                    debug!("Adding file: {:?}", p);
-                    let _ = self.files.insert(p);
+                Ok(QueueMessage::AddFile(p, watch)) => {
+                    debug!("Adding file: {:?} / Path: {:?}", p, watch);
+                    let _ = self.files.insert((p, watch));
                     self.last_update = Some(std::time::Instant::now());
                 }
                 Err(std::sync::mpsc::TryRecvError::Empty) => {
@@ -109,11 +109,11 @@ impl Queue {
 
         // test
         let p: Vec<PathBuf> = if self.single_file_execution {
-            let path = self.files.iter().next().unwrap().clone();
-            self.files.remove(&path);
-            vec![path]
+            let paths = self.files.iter().next().unwrap().clone();
+            self.files.remove(&paths);
+            vec![paths.0]
         } else {
-            self.files.drain().collect()
+            self.files.drain().map(|(p, _)| p).collect()
         };
 
         let mut command = Command::new(self.command.clone());
@@ -124,6 +124,7 @@ impl Queue {
                 a => command.args([a]),
             };
         }
+        // test
         command.stdout(Stdio::piped());
         command.stderr(Stdio::piped());
 

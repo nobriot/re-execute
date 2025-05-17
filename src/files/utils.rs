@@ -1,5 +1,8 @@
 use crate::Args;
-use std::path::PathBuf;
+use log::debug;
+use std::fs;
+use std::io::{BufRead, BufReader};
+use std::path::{Path, PathBuf, absolute};
 
 macro_rules! is_some_or_return {
     ($opt:expr, $ret:expr) => {
@@ -17,11 +20,103 @@ macro_rules! is_ok_or_return {
     };
 }
 
+#[derive(Debug)]
+struct IgnoreRule {
+    /// Pattern
+    pattern: String,
+    /// Is the pattern negated
+    is_negated: bool,
+}
+
+#[derive(Debug)]
+struct IgnoreRules {
+    /// List of rules found in the file
+    pub rules: Vec<IgnoreRule>,
+    /// Directory where the rule file is located
+    pub rule_path: PathBuf,
+}
+
+/// Parse an ignore file into IgnoreRules
+fn parse_ignore_file(path: &Path) -> IgnoreRules {
+    let mut rules = IgnoreRules { rules: Vec::new(), rule_path: path.to_path_buf() };
+
+    if let Ok(file) = std::fs::File::open(path) {
+        debug!("Checking file {:?}", path);
+        for line in BufReader::new(file).lines().flatten() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with("#") {
+                continue;
+            }
+            let is_negated = line.starts_with("!");
+            let pattern = if is_negated { &line[1..] } else { &line };
+            rules.rules.push(IgnoreRule { pattern: pattern.to_string(), is_negated });
+        }
+    } else {
+        eprintln!("Error reading contents of {:?}", path);
+    }
+
+    rules
+}
+
+/// Collect all the ignore rules from .gitignore and the like in the
+/// current and parent directories.
+fn collect_ignore_rules(path: &Path, watch: &PathBuf) -> Vec<IgnoreRules> {
+    let mut rules: Vec<IgnoreRules> = Vec::new();
+    let mut current_path = if path.is_dir() { Some(path) } else { path.parent() };
+
+    while let Some(dir) = current_path {
+        for ignore_file_name in &[".gitignore", ".rex_ignore"] {
+            let ignore_path = dir.join(ignore_file_name);
+            // test
+            if !ignore_path.exists() {
+                continue;
+            }
+            rules.push(parse_ignore_file(ignore_path.as_ref()));
+        }
+
+        if are_same_file(dir, watch) {
+            break;
+        }
+        current_path = dir.parent();
+    }
+
+    rules
+}
+
+/// Simple pattern matching from the gitignore file format
+/// It does not take into account the negation.
+fn matches_rule(file: &Path, rule: &IgnoreRule, dir: &Path) -> bool {
+    debug!("Checking {:?} against {:?} - top level {:?}", file, rule, dir);
+    //
+    let file_str = file.strip_prefix(dir).unwrap_or(file).to_string_lossy();
+    if rule.pattern.contains("*") {
+        // Handle those wildcards
+        // TODO: This does not handle all cases ... e.g. if greediness swallows a part match
+        // ALso does not respect directory levels
+        let parts: Vec<&str> = rule.pattern.split("*").collect();
+        let mut idx = 0;
+        let mut matched = true;
+        for part in parts {
+            if let Some(found) = file_str[idx..].find(part) {
+                idx += found + part.len();
+            } else {
+                matched = false;
+                break;
+            }
+        }
+
+        matched
+    } else {
+        // test
+        file_str.contains(&rule.pattern)
+    }
+}
+
 /// Checks if a file should be ignored after an update
-pub fn should_be_ignored(filename: &PathBuf, args: &Args) -> bool {
+pub fn should_be_ignored(filename: &PathBuf, args: &Args, watch: &PathBuf) -> bool {
     extension_matches(filename, args.extensions.as_slice())
-        && !is_git_ignored(filename)
-        && (args.hidden || !is_hidden(filename))
+        && !is_git_ignored(filename, watch)
+        && (args.hidden || !is_hidden(filename, watch))
 }
 
 /// Checks if the filename extensions is part of our allow-list
@@ -44,13 +139,28 @@ pub fn extension_matches(filename: &PathBuf, allowed_extensions: &[String]) -> b
     allowed_extensions.contains(&ext.to_lowercase())
 }
 
-pub fn is_git_ignored(filename: &PathBuf) -> bool {
-    false
-    // TODO: todo!();
+pub fn is_git_ignored(filename: &PathBuf, watch: &PathBuf) -> bool {
+    let abs_path = absolute(filename).unwrap_or(filename.clone());
+    let all_rules = collect_ignore_rules(&abs_path, watch);
+
+    let mut ignored = false;
+    for ignore_rules in all_rules {
+        for rule in ignore_rules.rules {
+            if matches_rule(&abs_path, &rule, &ignore_rules.rule_path) {
+                ignored = !rule.is_negated;
+            }
+
+            if ignored {
+                break;
+            }
+        }
+    }
+
+    ignored
 }
 
 /// Checks if the file or any parent directory is hidden
-pub fn is_hidden(filename: &PathBuf) -> bool {
+pub fn is_hidden(filename: &PathBuf, watch: &PathBuf) -> bool {
     let mut path = filename.clone();
 
     loop {
@@ -58,6 +168,10 @@ pub fn is_hidden(filename: &PathBuf) -> bool {
             return true;
         }
         if !path.pop() {
+            break;
+        }
+
+        if path == *watch {
             break;
         }
     }
@@ -84,6 +198,22 @@ fn is_file_hidden(filename: &PathBuf) -> bool {
     }
 
     false
+}
+
+/// Compares if a Path and a PathBuf are just the same file
+fn are_same_file(path: &Path, path_buf: &PathBuf) -> bool {
+    let canonical_path = fs::canonicalize(path);
+    if canonical_path.is_err() {
+        return false;
+    }
+    let canonical_path = canonical_path.unwrap();
+    let canonical_path_buf = fs::canonicalize(path_buf);
+    if canonical_path_buf.is_err() {
+        return false;
+    }
+    let canonical_path_buf = canonical_path_buf.unwrap();
+
+    canonical_path == canonical_path_buf
 }
 
 #[cfg(test)]
@@ -144,19 +274,24 @@ mod tests {
     #[test]
     fn test_is_hidden() {
         let filename = PathBuf::from_str("/a/path/.with/hidden_dir/file.jPeG").expect("test error");
-        assert!(is_hidden(&filename));
+        let watch = PathBuf::from_str("/a/path/.with/hidden_dir").expect("test error");
+        assert!(!is_hidden(&filename, &watch));
+        let watch = PathBuf::from_str("/").expect("test error");
+        assert!(is_hidden(&filename, &watch));
     }
 
     #[test]
     fn test_is_hidden_file_itself() {
         let filename = PathBuf::from_str("/a/path/with/hidden_dir/.file.txt").expect("test error");
-        assert!(is_hidden(&filename));
+        let watch = PathBuf::from_str("/a/").expect("test error");
+        assert!(is_hidden(&filename, &watch));
     }
 
     #[test]
     fn test_is_not_hidden() {
         let filename =
-            PathBuf::from_str("/a/path/with/not_hidden_dir/file.txt").expect("test error");
-        assert!(!is_hidden(&filename));
+            PathBuf::from_str("/.a/path/with/not_hidden_dir/file.txt").expect("test error");
+        let watch = PathBuf::from_str("/.a/path").expect("test error");
+        assert!(!is_hidden(&filename, &watch));
     }
 }

@@ -44,50 +44,63 @@ fn run() -> Result<ProgramErrors> {
     }
     let args = args;
 
-    let (tx, rx) = std::sync::mpsc::channel();
-    let mut watcher: Box<dyn Watcher> = if RecommendedWatcher::kind() == WatcherKind::PollWatcher {
-        let config =
-            Config::default().with_poll_interval(Duration::from_millis(args.poll_interval));
-        Box::new(PollWatcher::new(tx, config).unwrap())
-    } else {
-        Box::new(RecommendedWatcher::new(tx, Config::default()).unwrap())
-    };
+    // Stores tuples (watcher, rx, top-level file)
+    let mut file_watchers = Vec::new();
+    //
 
     for f in &args.files {
-        register_watch_for_file(&mut watcher, f)?;
+        let (tx, rx) = std::sync::mpsc::channel();
+        let mut watcher: Box<dyn Watcher> =
+            if RecommendedWatcher::kind() == WatcherKind::PollWatcher {
+                let config =
+                    Config::default().with_poll_interval(Duration::from_millis(args.poll_interval));
+                Box::new(PollWatcher::new(tx, config).unwrap())
+            } else {
+                Box::new(RecommendedWatcher::new(tx, Config::default()).unwrap())
+            };
+
+        let p = register_watch_for_file(&mut watcher, f)?;
+        file_watchers.push((watcher, rx, p));
     }
 
     let command_queue_tx = Queue::new(&args)?;
 
-    // test
+    // Watch event loop
+    //
     loop {
-        match rx.recv() {
-            Ok(event) if event.is_ok() => {
-                let event = event.unwrap();
-                //println!("Received Event: {:?}", event);
-                if let EventKind::Modify(_) = event.kind {
-                    // debug!("File modified: {:?}", event.paths);
+        for (_, rx, watch) in &file_watchers {
+            match rx.try_recv() {
+                Ok(event) if event.is_ok() => {
+                    let event = event.unwrap();
+                    //println!("Received Event: {:?}", event);
+                    if let EventKind::Modify(_) = event.kind {
+                        // debug!("File modified: {:?}", event.paths);
 
-                    for p in &event.paths {
-                        if !should_be_ignored(p, &args) {
-                            // debug!("Ignoring update for {:?}", p);
-                            continue;
+                        for p in &event.paths {
+                            if !should_be_ignored(p, &args, watch) {
+                                debug!("Ignoring update for {:?}", p);
+                                continue;
+                            }
+
+                            command_queue_tx
+                                .send(QueueMessage::AddFile(p.clone(), watch.clone()))?;
                         }
-
-                        command_queue_tx.send(QueueMessage::AddFile(p.clone()))?;
                     }
                 }
+                // FIXME: Handle timeouts but do not ignore FileWatchErrors
+                // Err(error) => return Err(ProgramErrors::FileWatchError(error.to_string()).into()),
+                _ => {}
             }
-            Err(error) => return Err(ProgramErrors::FileWatchError(error.to_string()).into()),
-            _ => {}
         }
+        // Make sure not to busy loop
+        std::thread::yield_now();
     }
 }
 
 fn register_watch_for_file(
     watcher: &mut Box<dyn Watcher>,
     file: &str,
-) -> Result<(), ProgramErrors> {
+) -> Result<PathBuf, ProgramErrors> {
     let p = absolute(file).expect("Could not determine abs path").canonicalize();
 
     if let Err(e) = p {
@@ -115,5 +128,5 @@ fn register_watch_for_file(
     info!("Registering a {:?} watch for {:?}", watch_mode, watch_target.as_path());
     watcher.watch(watch_target.as_path(), watch_mode).unwrap();
 
-    Ok(())
+    Ok(p)
 }
