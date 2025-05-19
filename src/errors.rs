@@ -2,7 +2,7 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum ProgramErrors {
-    #[error("File watch error: {0}")]
+    #[error("Error watching file: {0}")]
     FileWatchError(String),
 
     #[error("File error: {0} {1}")]

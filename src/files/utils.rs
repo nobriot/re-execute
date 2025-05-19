@@ -1,6 +1,6 @@
 use crate::Args;
 use log::debug;
-use std::fs;
+use same_file;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf, absolute};
 
@@ -65,16 +65,17 @@ fn collect_ignore_rules(path: &Path, watch: &PathBuf) -> Vec<IgnoreRules> {
     let mut current_path = if path.is_dir() { Some(path) } else { path.parent() };
 
     while let Some(dir) = current_path {
-        for ignore_file_name in &[".gitignore", ".rex_ignore"] {
+        for ignore_file_name in &[".gitignore"] {
             let ignore_path = dir.join(ignore_file_name);
-            // test
             if !ignore_path.exists() {
                 continue;
             }
             rules.push(parse_ignore_file(ignore_path.as_ref()));
         }
 
-        if are_same_file(dir, watch) {
+        // Abort collecting if one of the path cannot be read
+        // (doesn't exist or lack of permissions)
+        if same_file::is_same_file(dir, watch).unwrap_or(true) {
             break;
         }
         current_path = dir.parent();
@@ -107,7 +108,7 @@ fn matches_rule(file: &Path, rule: &IgnoreRule, dir: &Path) -> bool {
 
         matched
     } else {
-        // test
+        // TODO: Handle / parts
         file_str.contains(&rule.pattern)
     }
 }
@@ -143,20 +144,32 @@ pub fn is_git_ignored(filename: &PathBuf, watch: &PathBuf) -> bool {
     let abs_path = absolute(filename).unwrap_or(filename.clone());
     let all_rules = collect_ignore_rules(&abs_path, watch);
 
-    let mut ignored = false;
-    for ignore_rules in all_rules {
-        for rule in ignore_rules.rules {
-            if matches_rule(&abs_path, &rule, &ignore_rules.rule_path) {
-                ignored = !rule.is_negated;
+    // Check if a negative rule matches, if yes, it is not ignored, no matter
+    // the other matches
+    for ignore_rules in &all_rules {
+        for rule in &ignore_rules.rules {
+            if !rule.is_negated {
+                continue;
             }
-
-            if ignored {
-                break;
+            if matches_rule(&abs_path, &rule, &ignore_rules.rule_path) {
+                return false;
             }
         }
     }
 
-    ignored
+    // Second pass, non-negated rules
+    for ignore_rules in &all_rules {
+        for rule in &ignore_rules.rules {
+            if rule.is_negated {
+                continue;
+            }
+            if matches_rule(&abs_path, &rule, &ignore_rules.rule_path) {
+                return true;
+            }
+        }
+    }
+
+    false
 }
 
 /// Checks if the file or any parent directory is hidden
@@ -198,22 +211,6 @@ fn is_file_hidden(filename: &PathBuf) -> bool {
     }
 
     false
-}
-
-/// Compares if a Path and a PathBuf are just the same file
-fn are_same_file(path: &Path, path_buf: &PathBuf) -> bool {
-    let canonical_path = fs::canonicalize(path);
-    if canonical_path.is_err() {
-        return false;
-    }
-    let canonical_path = canonical_path.unwrap();
-    let canonical_path_buf = fs::canonicalize(path_buf);
-    if canonical_path_buf.is_err() {
-        return false;
-    }
-    let canonical_path_buf = canonical_path_buf.unwrap();
-
-    canonical_path == canonical_path_buf
 }
 
 #[cfg(test)]

@@ -375,6 +375,7 @@ dependencies = [
  "env_logger",
  "log",
  "notify",
+ "same-file",
  "shell-words",
  "thiserror",
 ]

@@ -24,6 +24,7 @@ colored = "3.0.0"
 thiserror = "2.0.12"
 anyhow = "1.0.98"
 shell-words = "1.1.0"
+same-file = "1.0.6"
 
 [profile.release]
 lto = true

@@ -4,6 +4,7 @@ use colored::Colorize;
 use log::*;
 use notify::*;
 use std::path::{PathBuf, absolute};
+use std::sync::mpsc::TryRecvError;
 use std::time::Duration;
 
 // static PROGRAM_NAME: &str = env!("CARGO_PKG_NAME");
@@ -16,7 +17,7 @@ pub mod errors;
 use errors::ProgramErrors;
 
 pub mod files;
-use files::utils::{extension_matches, should_be_ignored};
+use files::utils::should_be_ignored;
 
 pub mod command;
 use command::Queue;
@@ -66,7 +67,6 @@ fn run() -> Result<ProgramErrors> {
     let command_queue_tx = Queue::new(&args)?;
 
     // Watch event loop
-    //
     loop {
         for (_, rx, watch) in &file_watchers {
             match rx.try_recv() {
@@ -87,8 +87,13 @@ fn run() -> Result<ProgramErrors> {
                         }
                     }
                 }
-                // FIXME: Handle timeouts but do not ignore FileWatchErrors
-                // Err(error) => return Err(ProgramErrors::FileWatchError(error.to_string()).into()),
+                Ok(event) if event.is_err() => {
+                    error!("Watch file error: {:?}", event);
+                }
+                Err(TryRecvError::Empty) => {
+                    continue;
+                }
+                Err(error) => return Err(ProgramErrors::FileWatchError(error.to_string()).into()),
                 _ => {}
             }
         }
@@ -97,16 +102,16 @@ fn run() -> Result<ProgramErrors> {
     }
 }
 
+/// Updates the watcher to watch the file pointed by &str, if it exists
+/// Returns a Result with the PathBuf
 fn register_watch_for_file(
     watcher: &mut Box<dyn Watcher>,
     file: &str,
 ) -> Result<PathBuf, ProgramErrors> {
-    let p = absolute(file).expect("Could not determine abs path").canonicalize();
-
-    if let Err(e) = p {
-        return Err(ProgramErrors::FileError(file.to_string(), e.to_string()));
-    }
-    let p = p.unwrap();
+    let p = absolute(file)
+        .map_err(|e| ProgramErrors::FileError(file.to_string(), e.to_string()))?
+        .canonicalize()
+        .map_err(|e| ProgramErrors::FileError(file.to_string(), e.to_string()))?;
 
     let watch_mode =
         if p.is_dir() { RecursiveMode::Recursive } else { RecursiveMode::NonRecursive };
