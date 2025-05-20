@@ -13,6 +13,9 @@ pub enum ProgramErrors {
 
     #[error("Failed to execute command: {0}")]
     CommandExecutionError(String),
+
+    #[error("Internal Error: Trying to execute commands with an empty queue.")]
+    BadInternalState,
 }
 
 impl std::convert::From<std::io::Error> for ProgramErrors {

@@ -38,16 +38,12 @@ fn run() -> Result<ProgramErrors> {
     env_logger::builder().format_timestamp_millis().init();
 
     let mut args = Args::parse();
+    args.validate()?;
     debug!("We received {:?}", args);
-
-    if args.files.is_empty() {
-        args.files.push(String::from("."))
-    }
     let args = args;
 
     // Stores tuples (watcher, rx, top-level file)
     let mut file_watchers = Vec::new();
-    //
 
     for f in &args.files {
         let (tx, rx) = std::sync::mpsc::channel();
@@ -72,19 +68,20 @@ fn run() -> Result<ProgramErrors> {
             match rx.try_recv() {
                 Ok(event) if event.is_ok() => {
                     let event = event.unwrap();
-                    //println!("Received Event: {:?}", event);
-                    if let EventKind::Modify(_) = event.kind {
-                        // debug!("File modified: {:?}", event.paths);
+                    match event.kind {
+                        EventKind::Modify(_) | EventKind::Remove(_) => {
+                            // debug!("File modified: {:?}", event.paths);
+                            for p in &event.paths {
+                                if should_be_ignored(p, &args, watch) {
+                                    debug!("Ignoring update for {:?}", p);
+                                    continue;
+                                }
 
-                        for p in &event.paths {
-                            if !should_be_ignored(p, &args, watch) {
-                                debug!("Ignoring update for {:?}", p);
-                                continue;
+                                command_queue_tx
+                                    .send(QueueMessage::AddFile(p.clone(), watch.clone()))?;
                             }
-
-                            command_queue_tx
-                                .send(QueueMessage::AddFile(p.clone(), watch.clone()))?;
                         }
+                        _ => {}
                     }
                 }
                 Ok(event) if event.is_err() => {

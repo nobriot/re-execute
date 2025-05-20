@@ -113,11 +113,23 @@ fn matches_rule(file: &Path, rule: &IgnoreRule, dir: &Path) -> bool {
     }
 }
 
-/// Checks if a file should be ignored after an update
+/// Checks if a file update should be ignored
+///
 pub fn should_be_ignored(filename: &PathBuf, args: &Args, watch: &PathBuf) -> bool {
-    extension_matches(filename, args.extensions.as_slice())
-        && !is_git_ignored(filename, watch)
-        && (args.hidden || !is_hidden(filename, watch))
+    if !extension_matches(filename, args.extensions.as_slice()) {
+        return true;
+    }
+    if !args.deleted && !filename.exists() {
+        return true;
+    }
+    if !args.no_gitignore && is_git_ignored(filename, watch) {
+        return true;
+    }
+    if !args.hidden && is_hidden(filename, watch) {
+        return true;
+    }
+
+    false
 }
 
 /// Checks if the filename extensions is part of our allow-list
