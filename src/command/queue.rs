@@ -19,48 +19,27 @@ pub struct Queue {
     args: Vec<String>,
     /// Files that have been updated - pending command execution
     files: HashSet<(PathBuf, PathBuf)>,
-    /// Indicates if we execute the command 1 time per modified file
-    single_file_execution: bool,
+    /// Execution mode
+    batch_exec: bool,
+
     rx: std::sync::mpsc::Receiver<QueueMessage>,
     last_update: Option<std::time::Instant>,
 }
 
 impl Queue {
-    pub fn new(args: &Args) -> Result<std::sync::mpsc::Sender<QueueMessage>, ProgramErrors> {
-        // TODO: use &str instead of String
-        let command_tokens = shell_words::split(&args.command);
-
-        if let Err(e) = command_tokens {
-            return Err(ProgramErrors::CommandParseError(args.command.clone(), e.to_string()));
-        }
-        let command_tokens = command_tokens.unwrap();
-        if command_tokens.is_empty() {
-            return Err(ProgramErrors::CommandParseError(
-                args.command.clone(),
-                String::from("Empty command"),
-            ));
-        }
-
-        let single_file_execution = command_tokens[1..].iter().any(|s| s == FILE_SUBSTITUTION);
-        if single_file_execution && command_tokens[1..].iter().any(|s| s == FILES_SUBSTITUTION) {
-            return Err(ProgramErrors::CommandParseError(
-                args.command.clone(),
-                format!("Command cannot contain both {FILE_SUBSTITUTION} and {FILES_SUBSTITUTION}"),
-            ));
-        }
-
+    pub fn new(args: &Args) -> std::sync::mpsc::Sender<QueueMessage> {
         let (tx, rx) = std::sync::mpsc::channel();
         let mut queue = Self {
-            command: command_tokens[0].clone(),
-            args: command_tokens[1..].to_vec(),
+            command: args.command_tokens[0].clone(),
+            args: args.command_tokens[1..].to_vec(),
             files: HashSet::new(),
-            single_file_execution,
+            batch_exec: args.batch_exec,
             rx,
             last_update: None,
         };
 
         std::thread::spawn(move || queue.run());
-        Ok(tx)
+        tx
     }
 
     pub fn run(&mut self) {
@@ -107,7 +86,7 @@ impl Queue {
         }
 
         // Choose arguments based on the placeholders
-        let p: Vec<PathBuf> = if self.single_file_execution {
+        let p: Vec<PathBuf> = if self.batch_exec {
             let paths = self.files.iter().next().unwrap().clone();
             self.files.remove(&paths);
             vec![paths.0]

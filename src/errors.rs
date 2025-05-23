@@ -8,8 +8,11 @@ pub enum ProgramErrors {
     #[error("File error: {0} {1}")]
     FileError(String, String),
 
-    #[error("Failed to parse command: {0} error: {1}")]
+    #[error("Failed to parse command: {0} - {1}")]
     CommandParseError(String, String),
+
+    #[error("Command to execute is empty")]
+    EmptyCommand,
 
     #[error("Failed to execute command: {0}")]
     CommandExecutionError(String),

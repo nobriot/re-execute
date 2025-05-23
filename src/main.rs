@@ -60,7 +60,7 @@ fn run() -> Result<ProgramErrors> {
         file_watchers.push((watcher, rx, p));
     }
 
-    let command_queue_tx = Queue::new(&args)?;
+    let command_queue_tx = Queue::new(&args);
 
     // Watch event loop
     loop {

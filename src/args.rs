@@ -19,8 +19,8 @@ pub static FILES_BASENAME_SUBSTITUTION: &str = "{files-basename}";
 #[command(about = "Run commands when files are updated")]
 #[command(version)]
 pub struct Args {
-    /// List of files to watch. Will watch everything in the current
-    /// directory if not specified
+    /// List of files or directories to watch. Will watch everything in the
+    /// current directory if not specified
     #[arg(short, long, value_name = "file")]
     pub files: Vec<String>,
 
@@ -57,6 +57,15 @@ pub struct Args {
     /// Invoke the command also when files are deleted and no longer exist
     #[arg(long)]
     pub deleted: bool,
+
+    /// Indicates is we batch execute, i.e. 1 exec for all modified files
+    /// or if it is one execution per modified file
+    #[clap(skip)]
+    pub batch_exec: bool,
+
+    #[clap(skip)]
+    /// Parsed command tokens from the received command
+    pub command_tokens: Vec<String>,
 }
 
 impl Args {
@@ -68,11 +77,42 @@ impl Args {
             *s = s.to_lowercase();
             *s = s.strip_prefix(".").unwrap_or(s).to_string()
         });
-        println!("Extensions: {:?}", self.extensions);
 
         // If no files are passed, we watch the current directory for changes
         if self.files.is_empty() {
             self.files.push(String::from("."))
+        }
+
+        // If substitutions are used, it's only single files or all files
+        let command_tokens = shell_words::split(&self.command);
+
+        if let Err(e) = command_tokens {
+            return Err(ProgramErrors::CommandParseError(self.command.clone(), e.to_string()));
+        }
+        self.command_tokens = command_tokens.unwrap();
+        if self.command_tokens.is_empty() {
+            return Err(ProgramErrors::EmptyCommand);
+        }
+
+        // Fill up whether we execute once or one time per file
+        self.batch_exec = !self.command_tokens[1..].iter().any(|s| {
+            s.contains(FILE_SUBSTITUTION)
+                || s.contains(FILE_EXT_SUBSTITUTION)
+                || s.contains(FILE_BASENAME_SUBSTITUTION)
+        });
+        if self.batch_exec
+            && self.command_tokens[1..].iter().any(|s| {
+                s.contains(FILES_SUBSTITUTION)
+                    || s.contains(FILES_EXT_SUBSTITUTION)
+                    || s.contains(FILES_BASENAME_SUBSTITUTION)
+            })
+        {
+            return Err(ProgramErrors::CommandParseError(
+                self.command.clone(),
+                format!(
+                    "Command cannot contain both {FILE_SUBSTITUTION}/{FILE_EXT_SUBSTITUTION}/{FILE_BASENAME_SUBSTITUTION} ,and {FILES_SUBSTITUTION}/{FILES_EXT_SUBSTITUTION}/{FILES_BASENAME_SUBSTITUTION}"
+                ),
+            ));
         }
 
         Ok(())
