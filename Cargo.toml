@@ -1,6 +1,6 @@
 [package]
 name = "re-execute"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 
 authors = ["Nicolas Woltmann"]
@@ -17,9 +17,7 @@ path = "src/main.rs"
 
 [dependencies]
 clap = {version = "4.5.36", features = ["derive"]} 
-log = "0.4.27"
 notify = "8.0.0"
-env_logger = "0.11.8"
 colored = "3.0.0"
 thiserror = "2.0.12"
 anyhow = "1.0.98"

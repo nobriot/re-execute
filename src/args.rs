@@ -100,7 +100,7 @@ impl Args {
                 || s.contains(FILE_EXT_SUBSTITUTION)
                 || s.contains(FILE_BASENAME_SUBSTITUTION)
         });
-        if self.batch_exec
+        if !self.batch_exec
             && self.command_tokens[1..].iter().any(|s| {
                 s.contains(FILES_SUBSTITUTION)
                     || s.contains(FILES_EXT_SUBSTITUTION)
@@ -110,7 +110,7 @@ impl Args {
             return Err(ProgramErrors::CommandParseError(
                 self.command.clone(),
                 format!(
-                    "Command cannot contain both {FILE_SUBSTITUTION}/{FILE_EXT_SUBSTITUTION}/{FILE_BASENAME_SUBSTITUTION} ,and {FILES_SUBSTITUTION}/{FILES_EXT_SUBSTITUTION}/{FILES_BASENAME_SUBSTITUTION}"
+                    "Command cannot contain both {FILE_SUBSTITUTION}/{FILE_EXT_SUBSTITUTION}/{FILE_BASENAME_SUBSTITUTION} and {FILES_SUBSTITUTION}/{FILES_EXT_SUBSTITUTION}/{FILES_BASENAME_SUBSTITUTION}"
                 ),
             ));
         }

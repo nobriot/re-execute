@@ -12,6 +12,18 @@ cargo install .
 
 ## Usage
 
+Just annouce updated files in the config folder:
+
+```console
+rex -f $HOME/.config 'echo "the following files were updated: {files}"'
+```
+
+If you are intolerant to files on the desktop, clean-up automatically:
+
+```console
+rex -f ~/Desktop 'sleep 20 && rm {file}'
+```
+
 Run plantuml every time a puml file is modified in the current directory: 
 
 ```console

@@ -1,7 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
 use colored::Colorize;
-use log::*;
 use notify::*;
 use std::path::{PathBuf, absolute};
 use std::sync::mpsc::TryRecvError;
@@ -34,12 +33,9 @@ fn main() {
 }
 
 fn run() -> Result<ProgramErrors> {
-    // Logging for debug
-    env_logger::builder().format_timestamp_millis().init();
-
     let mut args = Args::parse();
     args.validate()?;
-    debug!("We received {:?}", args);
+    // println!("We received {:?}", args);
     let args = args;
 
     // Stores tuples (watcher, rx, top-level file)
@@ -73,7 +69,8 @@ fn run() -> Result<ProgramErrors> {
                             // debug!("File modified: {:?}", event.paths);
                             for p in &event.paths {
                                 if should_be_ignored(p, &args, watch) {
-                                    debug!("Ignoring update for {:?}", p);
+                                    // println!("Ignoring update for {:?}", p);
+                                    // test
                                     continue;
                                 }
 
@@ -85,7 +82,7 @@ fn run() -> Result<ProgramErrors> {
                     }
                 }
                 Ok(event) if event.is_err() => {
-                    error!("Watch file error: {:?}", event);
+                    eprintln!("Watch file error: {:?}", event);
                 }
                 Err(TryRecvError::Empty) => {
                     continue;
@@ -127,7 +124,7 @@ fn register_watch_for_file(
         p.parent().expect("Could not find parent dir for p").to_path_buf()
     };
 
-    info!("Registering a {:?} watch for {:?}", watch_mode, watch_target.as_path());
+    println!("Registering a {:?} watch for {:?}", watch_mode, watch_target.as_path());
     watcher.watch(watch_target.as_path(), watch_mode).unwrap();
 
     Ok(p)

@@ -2,7 +2,6 @@ use crate::args::{Args, FILE_SUBSTITUTION, FILES_SUBSTITUTION};
 use crate::command::QueueMessage;
 use crate::errors::ProgramErrors;
 use anyhow::Result;
-use log::*;
 use std::collections::HashSet;
 use std::io::Read;
 use std::path::PathBuf;
@@ -21,7 +20,8 @@ pub struct Queue {
     files: HashSet<(PathBuf, PathBuf)>,
     /// Execution mode
     batch_exec: bool,
-
+    /// Execute commands also if files are deleted
+    deleted_files: bool,
     rx: std::sync::mpsc::Receiver<QueueMessage>,
     last_update: Option<std::time::Instant>,
 }
@@ -34,6 +34,7 @@ impl Queue {
             args: args.command_tokens[1..].to_vec(),
             files: HashSet::new(),
             batch_exec: args.batch_exec,
+            deleted_files: args.deleted,
             rx,
             last_update: None,
         };
@@ -52,7 +53,7 @@ impl Queue {
                     }
                 }
                 Ok(QueueMessage::AddFile(p, watch)) => {
-                    debug!("Adding file: {:?} / Path: {:?}", p, watch);
+                    println!("Adding file: {:?} / Path: {:?}", p, watch);
                     let _ = self.files.insert((p, watch));
                     self.last_update = Some(std::time::Instant::now());
                 }
@@ -60,7 +61,7 @@ impl Queue {
                     //FIXME: This is busy looping
                 }
                 Err(e) => {
-                    warn!("Channel error: {:?}", e);
+                    println!("Channel error: {:?}", e);
                     break;
                 }
             }
@@ -86,7 +87,7 @@ impl Queue {
         }
 
         // Choose arguments based on the placeholders
-        let p: Vec<PathBuf> = if self.batch_exec {
+        let mut p: Vec<PathBuf> = if !self.batch_exec {
             let paths = self.files.iter().next().unwrap().clone();
             self.files.remove(&paths);
             vec![paths.0]
@@ -94,18 +95,46 @@ impl Queue {
             self.files.drain().map(|(p, _)| p).collect()
         };
 
-        let mut command = Command::new(self.command.clone());
-        for arg in &self.args {
-            match arg {
-                a if a == FILE_SUBSTITUTION => command.args(p.clone()),
-                a if a == FILES_SUBSTITUTION => command.args(p.clone()),
-                a => command.args([a]),
-            };
+        // Remove deleted files unless we want them
+        if !self.deleted_files {
+            p.retain(|p| p.exists());
+        }
+        let p = p; // Immutable now
+        // dbg!(&p);
+
+        let mut command = Command::new(&self.command);
+        if !p.is_empty() {
+            for arg in &self.args {
+                match arg {
+                    a if a == FILE_SUBSTITUTION => command.arg(p[0].clone()),
+                    // a if a == FILE_EXT_SUBSTITUTION => {
+                    //     command.arg(p[0].extension().unwrap_or_default())
+                    // }
+                    a if a == FILES_SUBSTITUTION => command.args(p.clone()),
+                    // a if a == FILES_EXT_SUBSTITUTION => {
+                    //     command.args(p.iter().filter_map(|pb| pb.extension()))
+                    // }
+                    a if a.contains(FILE_SUBSTITUTION) => {
+                        command.arg(a.replace(FILE_SUBSTITUTION, p[0].to_string_lossy().as_ref()))
+                    }
+                    a if a.contains(FILES_SUBSTITUTION) => command.arg(
+                        a.replace(
+                            FILES_SUBSTITUTION,
+                            p.iter()
+                                .map(|pb| pb.to_string_lossy())
+                                .collect::<Vec<_>>()
+                                .join(" ")
+                                .as_str(),
+                        ),
+                    ),
+                    a => command.args([a]),
+                };
+            }
         }
         command.stdout(Stdio::piped());
         command.stderr(Stdio::piped());
 
-        info!("Running command: '{:?}'", command);
+        println!("Running command: '{:?}'", command);
 
         let start = Instant::now();
         let mut child = command.spawn()?;

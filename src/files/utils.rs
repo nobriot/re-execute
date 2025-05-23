@@ -1,5 +1,4 @@
 use crate::Args;
-use log::debug;
 use same_file;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf, absolute};
@@ -41,7 +40,6 @@ fn parse_ignore_file(path: &Path) -> IgnoreRules {
     let mut rules = IgnoreRules { rules: Vec::new(), rule_path: path.to_path_buf() };
 
     if let Ok(file) = std::fs::File::open(path) {
-        debug!("Checking file {:?}", path);
         for line in BufReader::new(file).lines().flatten() {
             let line = line.trim();
             if line.is_empty() || line.starts_with("#") {
@@ -87,7 +85,7 @@ fn collect_ignore_rules(path: &Path, watch: &PathBuf) -> Vec<IgnoreRules> {
 /// Simple pattern matching from the gitignore file format
 /// It does not take into account the negation.
 fn matches_rule(file: &Path, rule: &IgnoreRule, dir: &Path) -> bool {
-    debug!("Checking {:?} against {:?} - top level {:?}", file, rule, dir);
+    // println!("Checking {:?} against {:?} - top level {:?}", file, rule, dir);
     //
     let file_str = file.strip_prefix(dir).unwrap_or(file).to_string_lossy();
     if rule.pattern.contains("*") {
@@ -108,7 +106,7 @@ fn matches_rule(file: &Path, rule: &IgnoreRule, dir: &Path) -> bool {
 
         matched
     } else {
-        // TODO: Handle / parts
+        // TODO: Handle / parts, ?
         file_str.contains(&rule.pattern)
     }
 }
