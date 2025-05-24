@@ -1,6 +1,7 @@
 use anyhow::Result;
 use clap::Parser;
 use colored::Colorize;
+use command::execution_report::ExecutionReport;
 use notify::*;
 use std::path::{PathBuf, absolute};
 use std::sync::mpsc::TryRecvError;
@@ -35,7 +36,6 @@ fn main() {
 fn run() -> Result<ProgramErrors> {
     let mut args = Args::parse();
     args.validate()?;
-    // println!("We received {:?}", args);
     let args = args;
 
     // Stores tuples (watcher, rx, top-level file)
@@ -56,10 +56,12 @@ fn run() -> Result<ProgramErrors> {
         file_watchers.push((watcher, rx, p));
     }
 
-    let command_queue_tx = Queue::new(&args);
+    let (report_tx, report_rx) = std::sync::mpsc::channel::<ExecutionReport>();
+    let command_queue_tx = Queue::new(&args, report_tx);
 
-    // Watch event loop
+    // Event loop
     loop {
+        // Receive FileWatch updates
         for (_, rx, watch) in &file_watchers {
             match rx.try_recv() {
                 Ok(event) if event.is_ok() => {
@@ -84,13 +86,33 @@ fn run() -> Result<ProgramErrors> {
                 Ok(event) if event.is_err() => {
                     eprintln!("Watch file error: {:?}", event);
                 }
-                Err(TryRecvError::Empty) => {
-                    continue;
-                }
+                Err(TryRecvError::Empty) => {}
                 Err(error) => return Err(ProgramErrors::FileWatchError(error.to_string()).into()),
                 _ => {}
             }
         }
+
+        // Receive Execution report updates
+        match report_rx.try_recv() {
+            Ok(report) => {
+                // Print command info, update as you like
+                println!("---- Command Execution Report ----");
+                println!("Exit code: {:?}", report.exit_code);
+                println!("Duration: {:?}", report.time);
+                if let Some(ref out) = report.stdout {
+                    println!("Stdout:\n{}", out);
+                }
+                if let Some(ref err) = report.stderr {
+                    println!("Stderr:\n{}", err);
+                }
+                println!("----------------------------------");
+            }
+            Err(TryRecvError::Empty) => {}
+            Err(e) => {
+                return Err(ProgramErrors::CommandExecutionError(e.to_string()).into());
+            }
+        }
+
         // Make sure not to busy loop
         std::thread::yield_now();
     }

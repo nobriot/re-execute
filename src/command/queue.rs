@@ -8,6 +8,8 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::time::Instant;
 
+use std::sync::mpsc::{Receiver, Sender};
+
 use super::execution_report::ExecutionReport;
 use super::exit_code;
 
@@ -22,12 +24,17 @@ pub struct Queue {
     batch_exec: bool,
     /// Execute commands also if files are deleted
     deleted_files: bool,
-    rx: std::sync::mpsc::Receiver<QueueMessage>,
+    rx: Receiver<QueueMessage>,
+    report_tx: Sender<ExecutionReport>,
     last_update: Option<std::time::Instant>,
+    command_count: usize,
 }
 
 impl Queue {
-    pub fn new(args: &Args) -> std::sync::mpsc::Sender<QueueMessage> {
+    pub fn new(
+        args: &Args,
+        report_tx: Sender<ExecutionReport>,
+    ) -> std::sync::mpsc::Sender<QueueMessage> {
         let (tx, rx) = std::sync::mpsc::channel();
         let mut queue = Self {
             command: args.command_tokens[0].clone(),
@@ -36,7 +43,9 @@ impl Queue {
             batch_exec: args.batch_exec,
             deleted_files: args.deleted,
             rx,
+            report_tx,
             last_update: None,
+            command_count: 0,
         };
 
         std::thread::spawn(move || queue.run());
@@ -61,7 +70,7 @@ impl Queue {
                     //FIXME: This is busy looping
                 }
                 Err(e) => {
-                    println!("Channel error: {:?}", e);
+                    eprintln!("Channel error: {:?}", e);
                     break;
                 }
             }
@@ -69,13 +78,17 @@ impl Queue {
                 //debug!("elapsed: {:?}", t.elapsed());
                 if t.elapsed() > std::time::Duration::from_millis(200) {
                     let exec_result = self.execute();
-                    if exec_result.is_err() {
+                    if let Ok(report) = exec_result {
+                        dbg!(&report);
+                        let tx_result = self.report_tx.send(report);
+                        if let Err(e) = tx_result {
+                            eprintln!("Exec Tx Report Channel error: {:?}", e);
+                            break;
+                        }
+                    } else {
                         eprintln!("Error with the queue trying to execute commands");
                         break;
                     }
-                    let report = exec_result.unwrap();
-                    // TODO: Send the report back to main executor
-                    dbg!(&report);
 
                     if self.files.is_empty() {
                         self.last_update = None;
@@ -138,7 +151,9 @@ impl Queue {
         command.stdout(Stdio::piped());
         command.stderr(Stdio::piped());
 
-        println!("Running command: '{:?}'", command);
+        // println!("Running command: '{:?}'", command);
+        let command_number = self.command_count;
+        self.command_count += 1;
 
         let start = Instant::now();
         let mut child = command.spawn()?;
@@ -161,6 +176,7 @@ impl Queue {
         };
 
         Ok(ExecutionReport {
+            command_number,
             exit_code: exit_code::get_exit_code(status),
             time: start.elapsed(),
             stdout,
