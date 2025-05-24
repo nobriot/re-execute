@@ -73,6 +73,10 @@ impl Queue {
                         eprintln!("Error with the queue trying to execute commands");
                         break;
                     }
+                    let report = exec_result.unwrap();
+                    // TODO: Send the report back to main executor
+                    dbg!(&report);
+
                     if self.files.is_empty() {
                         self.last_update = None;
                     }

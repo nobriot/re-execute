@@ -3,16 +3,16 @@ use clap::Parser;
 
 /// Use this placeholder to substitute individual updated files in the command
 pub static FILE_SUBSTITUTION: &str = "{file}";
-/// Use this placeholder to add the extension of the updated file
-pub static FILE_EXT_SUBSTITUTION: &str = "{file-ext}";
-/// Use this placeholder to add the basename of the updated file
-pub static FILE_BASENAME_SUBSTITUTION: &str = "{file-basename}";
+// /// Use this placeholder to add the extension of the updated file
+// pub static FILE_EXT_SUBSTITUTION: &str = "{file-ext}";
+// /// Use this placeholder to add the basename of the updated file
+// pub static FILE_BASENAME_SUBSTITUTION: &str = "{file-basename}";
 /// Use this placeholder to substitute the list of updated files in the command
 pub static FILES_SUBSTITUTION: &str = "{files}";
-/// Use this placeholder to add the extension of the updated file
-pub static FILES_EXT_SUBSTITUTION: &str = "{files-ext}";
-/// Use this placeholder to add the basename of the updated files
-pub static FILES_BASENAME_SUBSTITUTION: &str = "{files-basename}";
+// /// Use this placeholder to add the extension of the updated file
+// pub static FILES_EXT_SUBSTITUTION: &str = "{files-ext}";
+// /// Use this placeholder to add the basename of the updated files
+// pub static FILES_BASENAME_SUBSTITUTION: &str = "{files-basename}";
 
 #[derive(Parser, Debug)]
 #[command(name = "rex", max_term_width = 80)]
@@ -20,29 +20,34 @@ pub static FILES_BASENAME_SUBSTITUTION: &str = "{files-basename}";
 #[command(version)]
 pub struct Args {
     /// List of files or directories to watch. Will watch everything in the
-    /// current directory if not specified
-    #[arg(short, long, value_name = "file")]
+    /// current directory if none is specified
+    #[arg(short, long = "file", name = "file/dir")]
     pub files: Vec<String>,
 
     /// Command/program to run
-    /// Running one command per updated file:
-    /// Use {file} to include the updated file as argument
-    /// Use {file-basename} to include the basename of the file as argument
-    /// Running one command for all updated files:
-    /// Use {files-basename} to include the updated files as argument
-    /// Use {files} to include the updated files as argument
-    pub command: String,
+    #[arg(
+        trailing_var_arg = true,
+        help = "Command/program to run",
+        long_help = r#"Command/program to run
+Running one command per updated file:
+  Use {file} to include the updated file as argument
+
+Running one command for all updated files:
+  Use {files} to include the updated files as argument
+  By default if no context is present, one command will be run for all executed files"#
+    )]
+    pub command: Vec<String>,
 
     /// List of file extensions to watch.
-    #[arg(short, long)]
+    #[arg(short, long = "extension", name = "extension")]
     pub extensions: Vec<String>,
 
     /// Poll interval in ms for file updates
     #[arg(long, default_value_t = 200)]
     pub poll_interval: u64,
 
-    /// Suppress program's stdout
-    /// TODO
+    /// Suppress program's stdout/stderr
+    /// TODO: Implement this
     #[arg(short, long)]
     pub quiet: bool,
 
@@ -63,8 +68,8 @@ pub struct Args {
     #[clap(skip)]
     pub batch_exec: bool,
 
-    #[clap(skip)]
     /// Parsed command tokens from the received command
+    #[clap(skip)]
     pub command_tokens: Vec<String>,
 }
 
@@ -83,38 +88,29 @@ impl Args {
             self.files.push(String::from("."))
         }
 
-        // If substitutions are used, it's only single files or all files
-        let command_tokens = shell_words::split(&self.command);
+        // Fill up whether we execute once or one time per file
+        self.batch_exec = !self.command.iter().any(|s| s.contains(FILE_SUBSTITUTION));
+        if !self.batch_exec && self.command.iter().any(|s| s.contains(FILES_SUBSTITUTION)) {
+            // If substitutions are used, it's only single files or all files
+            return Err(ProgramErrors::CommandParseError(
+                self.command.join(" "),
+                format!("Command cannot contain both {FILE_SUBSTITUTION} and {FILES_SUBSTITUTION}"),
+            ));
+        }
+
+        // Parse the commands - check that we have something to execute
+        let concatenated_command = self.command.join(" ");
+        let command_tokens = shell_words::split(&concatenated_command);
 
         if let Err(e) = command_tokens {
-            return Err(ProgramErrors::CommandParseError(self.command.clone(), e.to_string()));
+            return Err(ProgramErrors::CommandParseError(self.command.join(" "), e.to_string()));
         }
         self.command_tokens = command_tokens.unwrap();
         if self.command_tokens.is_empty() {
             return Err(ProgramErrors::EmptyCommand);
         }
 
-        // Fill up whether we execute once or one time per file
-        self.batch_exec = !self.command_tokens[1..].iter().any(|s| {
-            s.contains(FILE_SUBSTITUTION)
-                || s.contains(FILE_EXT_SUBSTITUTION)
-                || s.contains(FILE_BASENAME_SUBSTITUTION)
-        });
-        if !self.batch_exec
-            && self.command_tokens[1..].iter().any(|s| {
-                s.contains(FILES_SUBSTITUTION)
-                    || s.contains(FILES_EXT_SUBSTITUTION)
-                    || s.contains(FILES_BASENAME_SUBSTITUTION)
-            })
-        {
-            return Err(ProgramErrors::CommandParseError(
-                self.command.clone(),
-                format!(
-                    "Command cannot contain both {FILE_SUBSTITUTION}/{FILE_EXT_SUBSTITUTION}/{FILE_BASENAME_SUBSTITUTION} and {FILES_SUBSTITUTION}/{FILES_EXT_SUBSTITUTION}/{FILES_BASENAME_SUBSTITUTION}"
-                ),
-            ));
-        }
-
+        dbg!(&self);
         Ok(())
     }
 }
