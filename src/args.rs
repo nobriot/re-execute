@@ -7,7 +7,7 @@ pub static FILE_SUBSTITUTION: &str = "{file}";
 pub static FILES_SUBSTITUTION: &str = "{files}";
 
 #[derive(Parser, Debug)]
-#[command(name = "rex", max_term_width = 80)]
+#[command(name = env!("CARGO_PKG_NAME"), max_term_width = 80)]
 #[command(about = "Run commands when files are updated")]
 #[command(version)]
 pub struct Args {
@@ -59,10 +59,6 @@ Running one command for all updated files:
     /// or if it is one execution per modified file
     #[clap(skip)]
     pub batch_exec: bool,
-
-    /// Parsed command tokens from the received command
-    #[clap(skip)]
-    pub command_tokens: Vec<String>,
 }
 
 impl Args {
@@ -80,6 +76,11 @@ impl Args {
             self.files.push(String::from("."))
         }
 
+        // Ensure we have a command to execute
+        if self.command.is_empty() {
+            return Err(ProgramErrors::EmptyCommand);
+        }
+
         // Fill up whether we execute once or one time per file
         self.batch_exec = !self.command.iter().any(|s| s.contains(FILE_SUBSTITUTION));
         if !self.batch_exec && self.command.iter().any(|s| s.contains(FILES_SUBSTITUTION)) {
@@ -88,18 +89,6 @@ impl Args {
                 self.command.join(" "),
                 format!("Command cannot contain both {FILE_SUBSTITUTION} and {FILES_SUBSTITUTION}"),
             ));
-        }
-
-        // Parse the commands - check that we have something to execute
-        let concatenated_command = self.command.join(" ");
-        let command_tokens = shell_words::split(&concatenated_command);
-
-        if let Err(e) = command_tokens {
-            return Err(ProgramErrors::CommandParseError(self.command.join(" "), e.to_string()));
-        }
-        self.command_tokens = command_tokens.unwrap();
-        if self.command_tokens.is_empty() {
-            return Err(ProgramErrors::EmptyCommand);
         }
 
         //dbg!(&self);

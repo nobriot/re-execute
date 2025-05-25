@@ -13,10 +13,8 @@ use super::execution_report::{ExecutionReport, ExecutionStart, ExecutionUpdate};
 use super::exit_code;
 
 pub struct Queue {
-    /// Command to execute
-    command: String,
-    /// Raw command arguments, may contains FILE placeholders
-    args: Vec<String>,
+    /// Command to execute, with arguments
+    command: Vec<String>,
     /// Files that have been updated - pending command execution
     files: HashSet<(PathBuf, PathBuf)>,
     /// Execution mode
@@ -36,8 +34,7 @@ impl Queue {
     ) -> std::sync::mpsc::Sender<QueueMessage> {
         let (tx, rx) = std::sync::mpsc::channel();
         let mut queue = Self {
-            command: args.command_tokens[0].clone(),
-            args: args.command_tokens[1..].to_vec(),
+            command: args.command.clone(),
             files: HashSet::new(),
             batch_exec: args.batch_exec,
             deleted_files: args.deleted,
@@ -65,9 +62,7 @@ impl Queue {
                     let _ = self.files.insert((p, watch));
                     self.last_update = Some(std::time::Instant::now());
                 }
-                Err(std::sync::mpsc::TryRecvError::Empty) => {
-                    //FIXME: This is busy looping
-                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {}
                 Err(e) => {
                     eprintln!("Channel error: {:?}", e);
                     break;
@@ -76,18 +71,19 @@ impl Queue {
             if let Some(t) = self.last_update {
                 //debug!("elapsed: {:?}", t.elapsed());
                 if t.elapsed() > std::time::Duration::from_millis(200) {
-                    let exec_result = self.execute();
-                    if let Ok(report) = exec_result {
-                        // dbg!(&report);
-                        let tx_result = self.report_tx.send(ExecutionUpdate::Finish(report));
-                        if let Err(e) = tx_result {
-                            eprintln!("Exec Tx Report Channel error: {:?}", e);
-                            break;
-                        }
-                    } else {
-                        eprintln!("Error with the queue trying to execute commands");
-                        break;
-                    }
+                    let _ = self.execute();
+                    // let exec_result = self.execute();
+                    // if let Ok(report) = exec_result {
+                    //     // dbg!(&report);
+                    //     let tx_result = self.report_tx.send(ExecutionUpdate::Finish(report));
+                    //     if let Err(e) = tx_result {
+                    //         eprintln!("Exec Tx Report Channel error: {:?}", e);
+                    //         break;
+                    //     }
+                    // } else {
+                    //     eprintln!("Error with the queue trying to execute commands");
+                    //     break;
+                    // }
 
                     if self.files.is_empty() {
                         self.last_update = None;
@@ -97,7 +93,7 @@ impl Queue {
         }
     }
 
-    pub fn execute(&mut self) -> Result<ExecutionReport, ProgramErrors> {
+    pub fn execute(&mut self) -> Result<(), ProgramErrors> {
         if self.files.is_empty() {
             return Err(ProgramErrors::BadInternalState);
         }
@@ -118,7 +114,7 @@ impl Queue {
         let p = p; // Immutable now
         // dbg!(&p);
 
-        let mut command = Command::new(&self.command);
+        let mut command = Command::new(&self.command[0]);
         // let concatenated_args = self.args.join(" ");
         // let arg_tokens = shell_words::split(&concatenated_args)
         //     .map_err(|e| ProgramErrors::CommandParseError(self.command.clone(), e.to_string()))?;
@@ -127,7 +123,7 @@ impl Queue {
 
         // File the arguments, replace the placeholders
         if !p.is_empty() {
-            for arg in &self.args {
+            for arg in &self.command[1..] {
                 match arg {
                     a if a == FILE_SUBSTITUTION => command.arg(p[0].clone()),
                     a if a == FILES_SUBSTITUTION => command.args(p.clone()),
@@ -151,42 +147,82 @@ impl Queue {
         command.stdout(Stdio::piped());
         command.stderr(Stdio::piped());
 
-        // dbg!(&command);
+        dbg!(&command);
         // println!("Running command: '{:?}'", command);
         let command_number = self.command_count;
         self.command_count += 1;
-        let _ = self.report_tx.send(ExecutionUpdate::Start(ExecutionStart {
+        if let Err(e) = self.report_tx.send(ExecutionUpdate::Start(ExecutionStart {
             command_number,
             files: p
                 .iter()
                 .map(|pb| pb.file_name().unwrap().to_string_lossy().into_owned())
                 .collect(),
-        }));
+        })) {
+            eprintln!("Error running command: {:?}", e);
+            return Err(ProgramErrors::CommandExecutionError(e.to_string()));
+        }
 
-        let mut child = command.spawn()?;
-        let status = child.wait()?;
+        let tx_clone = self.report_tx.clone();
+        std::thread::spawn(move || run_command(command_number, command, tx_clone));
 
-        let stdout = if let Some(mut stdout) = child.stdout.take() {
-            let mut output = String::new();
-            let _ = stdout.read_to_string(&mut output);
-            //println!("Command output: {:?}", output);
-            Some(output)
-        } else {
-            None
-        };
-        let stderr = if let Some(mut stderr) = child.stderr.take() {
-            let mut output = String::new();
-            let _ = stderr.read_to_string(&mut output);
-            Some(output)
-        } else {
-            None
-        };
+        // let mut child = command.spawn()?;
+        // let status = child.wait()?;
 
-        Ok(ExecutionReport {
-            command_number,
-            exit_code: exit_code::get_exit_code(status),
-            stdout,
-            stderr,
-        })
+        // let stdout = if let Some(mut stdout) = child.stdout.take() {
+        //     let mut output = String::new();
+        //     let _ = stdout.read_to_string(&mut output);
+        //     //println!("Command output: {:?}", output);
+        //     Some(output)
+        // } else {
+        //     None
+        // };
+        // let stderr = if let Some(mut stderr) = child.stderr.take() {
+        //     let mut output = String::new();
+        //     let _ = stderr.read_to_string(&mut output);
+        //     Some(output)
+        // } else {
+        //     None
+        // };
+
+        // if let Err(e) = self.report_tx.send(ExecutionUpdate::Finish(ExecutionReport {
+        //     command_number,
+        //     exit_code: exit_code::get_exit_code(status),
+        //     stdout,
+        //     stderr,
+        // })) {
+        //     return Err(ProgramErrors::CommandExecutionError(e.to_string()));
+        // }
+        Ok(())
     }
+}
+
+pub fn run_command(
+    command_number: usize,
+    mut command: Command,
+    report_tx: Sender<ExecutionUpdate>,
+) {
+    let mut child = command.spawn().expect("Command could not start");
+    let status = child.wait().expect("command could not finish");
+
+    let stdout = if let Some(mut stdout) = child.stdout.take() {
+        let mut output = String::new();
+        let _ = stdout.read_to_string(&mut output);
+        Some(output)
+    } else {
+        None
+    };
+    let stderr = if let Some(mut stderr) = child.stderr.take() {
+        let mut output = String::new();
+        let _ = stderr.read_to_string(&mut output);
+        Some(output)
+    } else {
+        None
+    };
+
+    let _ = report_tx.send(ExecutionUpdate::Finish(ExecutionReport {
+        command_number,
+        exit_code: exit_code::get_exit_code(status),
+        stdout,
+        stderr,
+    }));
 }

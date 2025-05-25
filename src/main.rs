@@ -9,7 +9,7 @@ use std::path::{PathBuf, absolute};
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::Duration;
 
-// static PROGRAM_NAME: &str = env!("CARGO_PKG_NAME");
+static PROGRAM_NAME: &str = env!("CARGO_PKG_NAME");
 // static PROGRAM_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub mod args;
@@ -32,7 +32,7 @@ fn main() {
     match run() {
         Ok(_) => {}
         Err(e) => {
-            eprintln!("run-on-change {} {:?}", "error".red(), e);
+            eprintln!("{} {} {:?}", PROGRAM_NAME.bold(), "error".red(), e);
             std::process::exit(1);
         }
     }
@@ -152,7 +152,7 @@ fn run() -> Result<()> {
         // Receive user key inputs
         match key_input_rx.try_recv() {
             Ok(KeyInputMessage::Quit) => {
-                println!("Quitting gracefully!");
+                println!("Quitting!");
                 let _ = command_queue_tx.send(QueueMessage::Abort);
                 return Ok(());
             }
