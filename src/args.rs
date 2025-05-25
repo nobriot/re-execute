@@ -3,16 +3,8 @@ use clap::Parser;
 
 /// Use this placeholder to substitute individual updated files in the command
 pub static FILE_SUBSTITUTION: &str = "{file}";
-// /// Use this placeholder to add the extension of the updated file
-// pub static FILE_EXT_SUBSTITUTION: &str = "{file-ext}";
-// /// Use this placeholder to add the basename of the updated file
-// pub static FILE_BASENAME_SUBSTITUTION: &str = "{file-basename}";
 /// Use this placeholder to substitute the list of updated files in the command
 pub static FILES_SUBSTITUTION: &str = "{files}";
-// /// Use this placeholder to add the extension of the updated file
-// pub static FILES_EXT_SUBSTITUTION: &str = "{files-ext}";
-// /// Use this placeholder to add the basename of the updated files
-// pub static FILES_BASENAME_SUBSTITUTION: &str = "{files-basename}";
 
 #[derive(Parser, Debug)]
 #[command(name = "rex", max_term_width = 80)]
@@ -110,7 +102,7 @@ impl Args {
             return Err(ProgramErrors::EmptyCommand);
         }
 
-        dbg!(&self);
+        //dbg!(&self);
         Ok(())
     }
 }

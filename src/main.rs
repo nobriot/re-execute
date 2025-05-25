@@ -1,10 +1,12 @@
 use anyhow::Result;
 use clap::Parser;
 use colored::Colorize;
-use command::execution_report::ExecutionReport;
+use command::execution_report::ExecutionUpdate;
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use key_input::KeyInputMessage;
 use notify::*;
 use std::path::{PathBuf, absolute};
-use std::sync::mpsc::TryRecvError;
+use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::Duration;
 
 // static PROGRAM_NAME: &str = env!("CARGO_PKG_NAME");
@@ -22,6 +24,9 @@ use files::utils::should_be_ignored;
 pub mod command;
 use command::Queue;
 use command::QueueMessage;
+use command::exit_code::get_exit_code_string;
+
+pub mod key_input;
 
 fn main() {
     match run() {
@@ -33,13 +38,17 @@ fn main() {
     }
 }
 
-fn run() -> Result<ProgramErrors> {
+fn run() -> Result<()> {
     let mut args = Args::parse();
     args.validate()?;
     let args = args;
 
     // Stores tuples (watcher, rx, top-level file)
-    let mut file_watchers = Vec::new();
+    let mut file_watchers: Vec<(
+        Box<dyn Watcher>,
+        Receiver<std::result::Result<Event, Error>>,
+        PathBuf,
+    )> = Vec::new();
 
     for f in &args.files {
         let (tx, rx) = std::sync::mpsc::channel();
@@ -56,8 +65,16 @@ fn run() -> Result<ProgramErrors> {
         file_watchers.push((watcher, rx, p));
     }
 
-    let (report_tx, report_rx) = std::sync::mpsc::channel::<ExecutionReport>();
+    let (report_tx, report_rx) = std::sync::mpsc::channel::<ExecutionUpdate>();
+    let (key_input_tx, key_input_rx) = std::sync::mpsc::channel::<KeyInputMessage>();
+
+    // Start the command key , key input listener
     let command_queue_tx = Queue::new(&args, report_tx);
+    std::thread::spawn(move || key_input::monitor_key_inputs(key_input_tx));
+
+    // UI progress bars
+    let multi_p = MultiProgress::new();
+    let mut pbs = Vec::new();
 
     // Event loop
     loop {
@@ -94,22 +111,55 @@ fn run() -> Result<ProgramErrors> {
 
         // Receive Execution report updates
         match report_rx.try_recv() {
-            Ok(report) => {
-                // Print command info, update as you like
-                println!("---- Command Execution Report ----");
-                println!("Exit code: {:?}", report.exit_code);
-                println!("Duration: {:?}", report.time);
-                if let Some(ref out) = report.stdout {
-                    println!("Stdout:\n{}", out);
+            Ok(ExecutionUpdate::Start(report)) => {
+                let pb = multi_p.insert(report.command_number, ProgressBar::new_spinner());
+
+                pb.set_style(
+                    ProgressStyle::default_spinner()
+                        .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ ")
+                        .template("{prefix} {spinner} - {wide_msg} [{elapsed}]")
+                        .expect("no template error"),
+                );
+                pb.set_prefix(format!(
+                    "#{:3}. {:40}",
+                    report.command_number + 1,
+                    report.files.join(", ")
+                ));
+                pb.enable_steady_tick(Duration::from_millis(100));
+                pbs.insert(report.command_number, pb);
+            }
+            Ok(ExecutionUpdate::Finish(report)) => {
+                //println!("Finished {}", report.command_number);
+                let pb = pbs.get_mut(report.command_number).unwrap();
+
+                pb.set_message(format!("code: {}", get_exit_code_string(report.exit_code)));
+
+                if let Some(c) = report.exit_code {
+                    if c != 0 {
+                        println!("stdout: {:?}", report.stdout);
+                        println!("stderr: {:?}", report.stderr);
+                    }
                 }
-                if let Some(ref err) = report.stderr {
-                    println!("Stderr:\n{}", err);
-                }
-                println!("----------------------------------");
+
+                pb.finish();
             }
             Err(TryRecvError::Empty) => {}
             Err(e) => {
                 return Err(ProgramErrors::CommandExecutionError(e.to_string()).into());
+            }
+        }
+
+        // Receive user key inputs
+        match key_input_rx.try_recv() {
+            Ok(KeyInputMessage::Quit) => {
+                println!("Quitting gracefully!");
+                let _ = command_queue_tx.send(QueueMessage::Abort);
+                return Ok(());
+            }
+            Err(TryRecvError::Empty) => {}
+            Err(e) => {
+                dbg!(e);
+                return Err(ProgramErrors::BadInternalState.into());
             }
         }
 
@@ -146,7 +196,7 @@ fn register_watch_for_file(
         p.parent().expect("Could not find parent dir for p").to_path_buf()
     };
 
-    println!("Registering a {:?} watch for {:?}", watch_mode, watch_target.as_path());
+    // println!("Registering a {:?} watch for {:?}", watch_mode, watch_target.as_path());
     watcher.watch(watch_target.as_path(), watch_mode).unwrap();
 
     Ok(p)

@@ -1,3 +1,4 @@
+use colored::Colorize;
 use std::process::ExitStatus;
 
 pub type ExitCode = Option<i32>;
@@ -11,4 +12,15 @@ pub fn get_exit_code(status: ExitStatus) -> ExitCode {
 #[cfg(not(unix))]
 pub fn get_exit_code(status: ExitStatus) -> ExitCode {
     status.code()
+}
+
+pub fn get_exit_code_string(exit_code: ExitCode) -> String {
+    if let Some(c) = exit_code {
+        match c {
+            0 => c.to_string(),
+            c => c.to_string().red().to_string(), // looks silly.
+        }
+    } else {
+        "Unknown".bold().bright_yellow().to_string()
+    }
 }

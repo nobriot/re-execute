@@ -6,11 +6,10 @@ use std::collections::HashSet;
 use std::io::Read;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use std::time::Instant;
 
 use std::sync::mpsc::{Receiver, Sender};
 
-use super::execution_report::ExecutionReport;
+use super::execution_report::{ExecutionReport, ExecutionStart, ExecutionUpdate};
 use super::exit_code;
 
 pub struct Queue {
@@ -25,7 +24,7 @@ pub struct Queue {
     /// Execute commands also if files are deleted
     deleted_files: bool,
     rx: Receiver<QueueMessage>,
-    report_tx: Sender<ExecutionReport>,
+    report_tx: Sender<ExecutionUpdate>,
     last_update: Option<std::time::Instant>,
     command_count: usize,
 }
@@ -33,7 +32,7 @@ pub struct Queue {
 impl Queue {
     pub fn new(
         args: &Args,
-        report_tx: Sender<ExecutionReport>,
+        report_tx: Sender<ExecutionUpdate>,
     ) -> std::sync::mpsc::Sender<QueueMessage> {
         let (tx, rx) = std::sync::mpsc::channel();
         let mut queue = Self {
@@ -62,7 +61,7 @@ impl Queue {
                     }
                 }
                 Ok(QueueMessage::AddFile(p, watch)) => {
-                    println!("Adding file: {:?} / Path: {:?}", p, watch);
+                    // println!("Adding file: {:?} / Path: {:?}", p, watch);
                     let _ = self.files.insert((p, watch));
                     self.last_update = Some(std::time::Instant::now());
                 }
@@ -79,8 +78,8 @@ impl Queue {
                 if t.elapsed() > std::time::Duration::from_millis(200) {
                     let exec_result = self.execute();
                     if let Ok(report) = exec_result {
-                        dbg!(&report);
-                        let tx_result = self.report_tx.send(report);
+                        // dbg!(&report);
+                        let tx_result = self.report_tx.send(ExecutionUpdate::Finish(report));
                         if let Err(e) = tx_result {
                             eprintln!("Exec Tx Report Channel error: {:?}", e);
                             break;
@@ -120,17 +119,18 @@ impl Queue {
         // dbg!(&p);
 
         let mut command = Command::new(&self.command);
+        // let concatenated_args = self.args.join(" ");
+        // let arg_tokens = shell_words::split(&concatenated_args)
+        //     .map_err(|e| ProgramErrors::CommandParseError(self.command.clone(), e.to_string()))?;
+        //println!("{:?}", &self.command);
+        //println!("{:?}", arg_tokens);
+
+        // File the arguments, replace the placeholders
         if !p.is_empty() {
             for arg in &self.args {
                 match arg {
                     a if a == FILE_SUBSTITUTION => command.arg(p[0].clone()),
-                    // a if a == FILE_EXT_SUBSTITUTION => {
-                    //     command.arg(p[0].extension().unwrap_or_default())
-                    // }
                     a if a == FILES_SUBSTITUTION => command.args(p.clone()),
-                    // a if a == FILES_EXT_SUBSTITUTION => {
-                    //     command.args(p.iter().filter_map(|pb| pb.extension()))
-                    // }
                     a if a.contains(FILE_SUBSTITUTION) => {
                         command.arg(a.replace(FILE_SUBSTITUTION, p[0].to_string_lossy().as_ref()))
                     }
@@ -151,11 +151,18 @@ impl Queue {
         command.stdout(Stdio::piped());
         command.stderr(Stdio::piped());
 
+        // dbg!(&command);
         // println!("Running command: '{:?}'", command);
         let command_number = self.command_count;
         self.command_count += 1;
+        let _ = self.report_tx.send(ExecutionUpdate::Start(ExecutionStart {
+            command_number,
+            files: p
+                .iter()
+                .map(|pb| pb.file_name().unwrap().to_string_lossy().into_owned())
+                .collect(),
+        }));
 
-        let start = Instant::now();
         let mut child = command.spawn()?;
         let status = child.wait()?;
 
@@ -178,7 +185,6 @@ impl Queue {
         Ok(ExecutionReport {
             command_number,
             exit_code: exit_code::get_exit_code(status),
-            time: start.elapsed(),
             stdout,
             stderr,
         })
