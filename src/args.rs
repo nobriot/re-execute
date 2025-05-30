@@ -6,6 +6,12 @@ pub static FILE_SUBSTITUTION: &str = "{file}";
 /// Use this placeholder to substitute the list of updated files in the command
 pub static FILES_SUBSTITUTION: &str = "{files}";
 
+#[cfg(not(windows))]
+pub const DEFAULT_SHELL: &str = "sh";
+
+#[cfg(windows)]
+pub const DEFAULT_SHELL: &str = "cmd.exe";
+
 #[derive(Parser, Debug)]
 #[command(name = env!("CARGO_PKG_NAME"), max_term_width = 80)]
 #[command(about = "Run commands when files are updated")]
@@ -55,6 +61,16 @@ Running one command for all updated files:
     #[arg(long)]
     pub deleted: bool,
 
+    /// Indicates if we abort previous ongoing commands
+    /// Happens only by default if no substitution is specified
+    #[arg(short, long)]
+    pub abort_previous: bool,
+
+    /// Shell used to spawn the command
+    /// TODO
+    #[arg(short, long, default_value_t = String::from(DEFAULT_SHELL))]
+    pub shell: String,
+
     /// Indicates is we batch execute, i.e. 1 exec for all modified files
     /// or if it is one execution per modified file
     #[clap(skip)]
@@ -83,12 +99,18 @@ impl Args {
 
         // Fill up whether we execute once or one time per file
         self.batch_exec = !self.command.iter().any(|s| s.contains(FILE_SUBSTITUTION));
-        if !self.batch_exec && self.command.iter().any(|s| s.contains(FILES_SUBSTITUTION)) {
-            // If substitutions are used, it's only single files or all files
-            return Err(ProgramErrors::CommandParseError(
-                self.command.join(" "),
-                format!("Command cannot contain both {FILE_SUBSTITUTION} and {FILES_SUBSTITUTION}"),
-            ));
+        if self.command.iter().any(|s| s.contains(FILES_SUBSTITUTION)) {
+            if !self.batch_exec {
+                // If substitutions are used, it's only single files or all files
+                return Err(ProgramErrors::CommandParseError(
+                    self.command.join(" "),
+                    format!(
+                        "Command cannot contain both {FILE_SUBSTITUTION} and {FILES_SUBSTITUTION}"
+                    ),
+                ));
+            }
+        } else if self.batch_exec {
+            self.abort_previous = true;
         }
 
         //dbg!(&self);

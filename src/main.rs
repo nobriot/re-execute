@@ -2,15 +2,11 @@ use anyhow::Result;
 use clap::Parser;
 use colored::Colorize;
 use command::execution_report::ExecutionUpdate;
-use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use key_input::KeyInputMessage;
 use notify::*;
 use std::path::{PathBuf, absolute};
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::Duration;
-
-static PROGRAM_NAME: &str = env!("CARGO_PKG_NAME");
-// static PROGRAM_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub mod args;
 use args::Args;
@@ -24,15 +20,16 @@ use files::utils::should_be_ignored;
 pub mod command;
 use command::Queue;
 use command::QueueMessage;
-use command::exit_code::get_exit_code_string;
 
 pub mod key_input;
+pub mod output;
+use output::Output;
 
 fn main() {
     match run() {
         Ok(_) => {}
         Err(e) => {
-            eprintln!("{} {} {:?}", PROGRAM_NAME.bold(), "error".red(), e);
+            eprintln!("{} {} {:?}", output::PROGRAM_NAME.bold(), "error".red(), e);
             std::process::exit(1);
         }
     }
@@ -68,13 +65,13 @@ fn run() -> Result<()> {
     let (report_tx, report_rx) = std::sync::mpsc::channel::<ExecutionUpdate>();
     let (key_input_tx, key_input_rx) = std::sync::mpsc::channel::<KeyInputMessage>();
 
-    // Start the command key , key input listener
+    // Start the command queue
     let command_queue_tx = Queue::new(&args, report_tx);
     std::thread::spawn(move || key_input::monitor_key_inputs(key_input_tx));
 
-    // UI progress bars
-    let multi_p = MultiProgress::new();
-    let mut pbs = Vec::new();
+    // UI output
+    let mut output = Output::new();
+    output.print_title(&args);
 
     // Event loop
     loop {
@@ -111,38 +108,7 @@ fn run() -> Result<()> {
 
         // Receive Execution report updates
         match report_rx.try_recv() {
-            Ok(ExecutionUpdate::Start(report)) => {
-                let pb = multi_p.insert(report.command_number, ProgressBar::new_spinner());
-
-                pb.set_style(
-                    ProgressStyle::default_spinner()
-                        .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ ")
-                        .template("{prefix} {spinner} - {wide_msg} [{elapsed}]")
-                        .expect("no template error"),
-                );
-                pb.set_prefix(format!(
-                    "#{:3}. {:40}",
-                    report.command_number + 1,
-                    report.files.join(", ")
-                ));
-                pb.enable_steady_tick(Duration::from_millis(100));
-                pbs.insert(report.command_number, pb);
-            }
-            Ok(ExecutionUpdate::Finish(report)) => {
-                //println!("Finished {}", report.command_number);
-                let pb = pbs.get_mut(report.command_number).unwrap();
-
-                pb.set_message(format!("code: {}", get_exit_code_string(report.exit_code)));
-
-                if let Some(c) = report.exit_code {
-                    if c != 0 {
-                        println!("stdout: {:?}", report.stdout);
-                        println!("stderr: {:?}", report.stderr);
-                    }
-                }
-
-                pb.finish();
-            }
+            Ok(update) => output.update(update),
             Err(TryRecvError::Empty) => {}
             Err(e) => {
                 return Err(ProgramErrors::CommandExecutionError(e.to_string()).into());
@@ -158,8 +124,8 @@ fn run() -> Result<()> {
             }
             Err(TryRecvError::Empty) => {}
             Err(e) => {
-                dbg!(e);
-                return Err(ProgramErrors::BadInternalState.into());
+                //dbg!(e);
+                return Err(ProgramErrors::ChannelReceiveError(e.to_string()).into());
             }
         }
 

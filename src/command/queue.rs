@@ -9,8 +9,9 @@ use std::process::{Command, Stdio};
 
 use std::sync::mpsc::{Receiver, Sender};
 
-use super::execution_report::{ExecutionReport, ExecutionStart, ExecutionUpdate};
-use super::exit_code;
+// Same module
+use crate::command::execution_report::{ExecutionReport, ExecutionStart, ExecutionUpdate};
+use crate::command::exit_code;
 
 pub struct Queue {
     /// Command to execute, with arguments
@@ -147,7 +148,7 @@ impl Queue {
         command.stdout(Stdio::piped());
         command.stderr(Stdio::piped());
 
-        dbg!(&command);
+        //dbg!(&command);
         // println!("Running command: '{:?}'", command);
         let command_number = self.command_count;
         self.command_count += 1;

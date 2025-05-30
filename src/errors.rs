@@ -19,6 +19,9 @@ pub enum ProgramErrors {
 
     #[error("Internal Error: Trying to execute commands with an empty queue.")]
     BadInternalState,
+
+    #[error("Internal Error: {0}")]
+    ChannelReceiveError(String),
 }
 
 impl std::convert::From<std::io::Error> for ProgramErrors {
