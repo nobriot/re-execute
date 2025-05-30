@@ -7,7 +7,7 @@ pub static FILE_SUBSTITUTION: &str = "{file}";
 pub static FILES_SUBSTITUTION: &str = "{files}";
 
 #[cfg(not(windows))]
-pub const DEFAULT_SHELL: &str = "sh";
+pub const DEFAULT_SHELL: &str = "sh -c";
 
 #[cfg(windows)]
 pub const DEFAULT_SHELL: &str = "cmd.exe";
@@ -67,9 +67,9 @@ Running one command for all updated files:
     pub abort_previous: bool,
 
     /// Shell used to spawn the command
-    /// TODO
-    #[arg(short, long, default_value_t = String::from(DEFAULT_SHELL))]
-    pub shell: String,
+    /// Not possible to specify manually
+    #[clap(skip)]
+    pub shell: &'static str,
 
     /// Indicates is we batch execute, i.e. 1 exec for all modified files
     /// or if it is one execution per modified file
@@ -112,6 +112,8 @@ impl Args {
         } else if self.batch_exec {
             self.abort_previous = true;
         }
+
+        self.shell = DEFAULT_SHELL;
 
         //dbg!(&self);
         Ok(())

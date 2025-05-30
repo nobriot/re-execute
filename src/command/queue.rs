@@ -14,6 +14,8 @@ use crate::command::execution_report::{ExecutionReport, ExecutionStart, Executio
 use crate::command::exit_code;
 
 pub struct Queue {
+    /// Shell to use to to spawn the command
+    shell: &'static str,
     /// Command to execute, with arguments
     command: Vec<String>,
     /// Files that have been updated - pending command execution
@@ -35,6 +37,7 @@ impl Queue {
     ) -> std::sync::mpsc::Sender<QueueMessage> {
         let (tx, rx) = std::sync::mpsc::channel();
         let mut queue = Self {
+            shell: args.shell,
             command: args.command.clone(),
             files: HashSet::new(),
             batch_exec: args.batch_exec,
@@ -70,7 +73,6 @@ impl Queue {
                 }
             }
             if let Some(t) = self.last_update {
-                //debug!("elapsed: {:?}", t.elapsed());
                 if t.elapsed() > std::time::Duration::from_millis(200) {
                     let _ = self.execute();
                     // let exec_result = self.execute();
@@ -115,7 +117,17 @@ impl Queue {
         let p = p; // Immutable now
         // dbg!(&p);
 
-        let mut command = Command::new(&self.command[0]);
+        let shell_parts = shell_words::split(self.shell).map_err(|_| {
+            ProgramErrors::CommandParseError(
+                self.shell.to_string(),
+                "Failed to parse shell command".to_string(),
+            )
+        })?;
+
+        let mut command = Command::new(&shell_parts[0]);
+        for arg in &shell_parts[1..] {
+            command.arg(arg);
+        }
         // let concatenated_args = self.args.join(" ");
         // let arg_tokens = shell_words::split(&concatenated_args)
         //     .map_err(|e| ProgramErrors::CommandParseError(self.command.clone(), e.to_string()))?;
@@ -124,7 +136,7 @@ impl Queue {
 
         // File the arguments, replace the placeholders
         if !p.is_empty() {
-            for arg in &self.command[1..] {
+            for arg in &self.command {
                 match arg {
                     a if a == FILE_SUBSTITUTION => command.arg(p[0].clone()),
                     a if a == FILES_SUBSTITUTION => command.args(p.clone()),

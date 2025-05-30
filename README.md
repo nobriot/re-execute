@@ -4,9 +4,14 @@ Execute commands automatically when files are updated.
 
 ## Installation 
 
+You will need [cargo](https://doc.rust-lang.org/cargo/getting-started/installation.html)
+installed. Then install using:
+
 ```console
 cargo install --path .
 ```
+
+The command is shortened to `rex`. (I pronounce it re-X).
 
 ## Usage
 

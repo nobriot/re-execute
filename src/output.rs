@@ -10,10 +10,8 @@ use std::time::Duration;
 // static PROGRAM_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub static PROGRAM_NAME: &str = env!("CARGO_PKG_NAME");
 const DEFAULT_TICK_DURATION_MS: u64 = 100;
-// Homm can't decide
-// const TICK_STRINGS: [&str; 8] = ["▰▱▱▱▱▱▱", "▰▰▱▱▱▱▱", "▰▰▰▱▱▱▱", "▰▰▰▰▱▱▱", "▰▰▰▰▰▱▱", "▰▰▰▰▰▰▱", "▰▰▰▰▰▰▰", "▰▱▱▱▱▱▱"];
-// const TICK_STRINGS: [&str; 4] = ["▹▹▹", "▸▹▹", "▹▸▹", "▹▹▸"];
-const TICK_STRINGS: [&str; 8] = ["⢹", "⢺", "⢼", "⣸", "⣇", "⡧", "⡗", "⡏"];
+// const TICK_STRINGS: [&str; 8] = ["⢹", "⢺", "⢼", "⣸", "⣇", "⡧", "⡗", "⡏"];
+const TICK_CHARS: &str = "⣼⣹⢻⠿⡟⣏⣧⣶ ";
 
 /// Helper to manage the output on the screen while
 /// the programm is running
@@ -59,7 +57,7 @@ impl Output {
                 pb.set_prefix(
                     format!("#{}.", (report.command_number + 1)).bright_black().to_string(),
                 );
-                pb.set_message(format!("| {}: {}", "files".bold(), files));
+                pb.set_message(format!("{}: {}", "files".bold(), files));
                 pb.enable_steady_tick(Duration::from_millis(DEFAULT_TICK_DURATION_MS));
                 self.progress_bars.insert(report.command_number, pb);
                 self.file_list_cache.insert(report.command_number, files);
@@ -75,13 +73,15 @@ impl Output {
                         .bright_black()
                         .to_string(),
                 );
-                pb.set_message(format!("| {}: {}", "files".bold(), files));
+                pb.set_message(format!("{}: {}", "files".bold(), files));
+
+                if let Some(stdout) = report.stdout {}
 
                 if let Some(c) = report.exit_code {
                     if c != 0 {
                         // FIXME
                         // println!("stdout: {:?}", report.stdout);
-                        // println!("stderr: {:?}", report.stderr);
+                        // // println!("stderr: {:?}", report.stderr);
                     }
                 }
 
@@ -93,7 +93,8 @@ impl Output {
     /// Returns the default / pre-configured progress style
     fn progress_bar_style() -> ProgressStyle {
         ProgressStyle::default_spinner()
-            .tick_strings(&TICK_STRINGS)
+            //.tick_strings(&TICK_STRINGS)
+            .tick_chars(TICK_CHARS)
             .template(
                 format!(
                     "{{prefix}} {}   {{wide_msg}} {}",
