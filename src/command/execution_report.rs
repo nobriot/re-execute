@@ -1,14 +1,14 @@
 use crate::command::exit_code::ExitCode;
 
 #[derive(Debug)]
-pub enum ExecutionUpdate {
-    Start(ExecutionStart),
-    Output(ExecutionOutput),
-    Finish(ExecutionReport),
+pub enum ExecMessage {
+    Start(ExecStart),
+    Output(ExecOutput),
+    Finish(ExecCode),
 }
 
 #[derive(Debug)]
-pub struct ExecutionStart {
+pub struct ExecStart {
     /// ID of the command being run
     pub command_number: usize,
     /// List of files associated with the run
@@ -16,7 +16,7 @@ pub struct ExecutionStart {
 }
 
 #[derive(Debug)]
-pub struct ExecutionOutput {
+pub struct ExecOutput {
     /// ID of the command being run
     pub command_number: usize,
     /// stdout update
@@ -26,7 +26,7 @@ pub struct ExecutionOutput {
 }
 
 #[derive(Debug)]
-pub struct ExecutionReport {
+pub struct ExecCode {
     /// ID of the command being run
     pub command_number: usize,
     /// Exit code

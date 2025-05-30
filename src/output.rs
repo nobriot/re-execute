@@ -1,6 +1,6 @@
 use crate::{
     args::{Args, FILE_SUBSTITUTION, FILES_SUBSTITUTION},
-    command::{execution_report::ExecutionUpdate, exit_code::get_exit_code_string},
+    command::{execution_report::ExecMessage, exit_code::get_exit_code_string},
 };
 use colored::Colorize;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
@@ -87,9 +87,9 @@ impl Output {
     }
 
     /// Updates progress bars based on an exec report
-    pub fn update(&mut self, update: ExecutionUpdate) {
+    pub fn update(&mut self, update: ExecMessage) {
         match update {
-            ExecutionUpdate::Start(report) => {
+            ExecMessage::Start(report) => {
                 let index = report.command_number + 1;
                 self.remove_old_progress_bars(index);
                 let pb = self.multi.insert(index, ProgressBar::new_spinner());
@@ -101,7 +101,7 @@ impl Output {
                 self.progress_bars.insert(index, pb);
                 self.file_list_cache.insert(index, files);
             }
-            ExecutionUpdate::Output(report) => {
+            ExecMessage::Output(report) => {
                 if self.quiet {
                     return;
                 }
@@ -113,7 +113,7 @@ impl Output {
                     self.println(stderr);
                 }
             }
-            ExecutionUpdate::Finish(report) => {
+            ExecMessage::Finish(report) => {
                 let index = report.command_number + 1;
                 let pb = self.progress_bars.get_mut(&index).unwrap();
                 let files = self.file_list_cache.get(&index).expect("No cache error");

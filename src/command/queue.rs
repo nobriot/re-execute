@@ -10,10 +10,10 @@ use std::process::{Command, Stdio};
 use std::sync::mpsc::{Receiver, Sender};
 
 // Same module
-use crate::command::execution_report::{ExecutionReport, ExecutionStart, ExecutionUpdate};
+use crate::command::execution_report::{ExecCode, ExecMessage, ExecStart};
 use crate::command::exit_code;
 
-use super::execution_report::ExecutionOutput;
+use super::execution_report::ExecOutput;
 
 pub struct Queue {
     /// Shell to use to to spawn the command
@@ -27,7 +27,7 @@ pub struct Queue {
     /// Execute commands also if files are deleted
     deleted_files: bool,
     rx: Receiver<QueueMessage>,
-    report_tx: Sender<ExecutionUpdate>,
+    report_tx: Sender<ExecMessage>,
     last_update: Option<std::time::Instant>,
     command_count: usize,
 }
@@ -35,7 +35,7 @@ pub struct Queue {
 impl Queue {
     pub fn start(
         args: &Args,
-        report_tx: Sender<ExecutionUpdate>,
+        report_tx: Sender<ExecMessage>,
     ) -> std::sync::mpsc::Sender<QueueMessage> {
         let (tx, rx) = std::sync::mpsc::channel();
         let mut queue = Self {
@@ -130,11 +130,6 @@ impl Queue {
         for arg in &shell_parts[1..] {
             command.arg(arg);
         }
-        // let concatenated_args = self.args.join(" ");
-        // let arg_tokens = shell_words::split(&concatenated_args)
-        //     .map_err(|e| ProgramErrors::CommandParseError(self.command.clone(), e.to_string()))?;
-        //println!("{:?}", &self.command);
-        //println!("{:?}", arg_tokens);
 
         // File the arguments, replace the placeholders
         if !p.is_empty() {
@@ -166,7 +161,7 @@ impl Queue {
         // println!("Running command: '{:?}'", command);
         let command_number = self.command_count;
         self.command_count += 1;
-        if let Err(e) = self.report_tx.send(ExecutionUpdate::Start(ExecutionStart {
+        if let Err(e) = self.report_tx.send(ExecMessage::Start(ExecStart {
             command_number,
             files: p
                 .iter()
@@ -180,42 +175,11 @@ impl Queue {
         let tx_clone = self.report_tx.clone();
         std::thread::spawn(move || run_command(command_number, command, tx_clone));
 
-        // let mut child = command.spawn()?;
-        // let status = child.wait()?;
-
-        // let stdout = if let Some(mut stdout) = child.stdout.take() {
-        //     let mut output = String::new();
-        //     let _ = stdout.read_to_string(&mut output);
-        //     //println!("Command output: {:?}", output);
-        //     Some(output)
-        // } else {
-        //     None
-        // };
-        // let stderr = if let Some(mut stderr) = child.stderr.take() {
-        //     let mut output = String::new();
-        //     let _ = stderr.read_to_string(&mut output);
-        //     Some(output)
-        // } else {
-        //     None
-        // };
-
-        // if let Err(e) = self.report_tx.send(ExecutionUpdate::Finish(ExecutionReport {
-        //     command_number,
-        //     exit_code: exit_code::get_exit_code(status),
-        //     stdout,
-        //     stderr,
-        // })) {
-        //     return Err(ProgramErrors::CommandExecutionError(e.to_string()));
-        // }
         Ok(())
     }
 }
 
-pub fn run_command(
-    command_number: usize,
-    mut command: Command,
-    report_tx: Sender<ExecutionUpdate>,
-) {
+pub fn run_command(command_number: usize, mut command: Command, report_tx: Sender<ExecMessage>) {
     let mut child = command.spawn().expect("Command could not start");
 
     // Send stdout updates to tx reports
@@ -224,7 +188,7 @@ pub fn run_command(
     let stdout_handle = std::thread::spawn(move || {
         for line in stdout.lines() {
             let line = line.unwrap();
-            let _ = stdout_tx.send(ExecutionUpdate::Output(ExecutionOutput {
+            let _ = stdout_tx.send(ExecMessage::Output(ExecOutput {
                 command_number,
                 stdout: Some(line),
                 stderr: None,
@@ -238,7 +202,7 @@ pub fn run_command(
     let stderr_handle = std::thread::spawn(move || {
         for line in stderr.lines() {
             let line = line.unwrap();
-            let _ = stderr_tx.send(ExecutionUpdate::Output(ExecutionOutput {
+            let _ = stderr_tx.send(ExecMessage::Output(ExecOutput {
                 command_number,
                 stdout: None,
                 stderr: Some(line),
@@ -263,7 +227,7 @@ pub fn run_command(
     stderr_handle.join().unwrap();
 
     let status = child.wait().expect("command could not finish");
-    let _ = report_tx.send(ExecutionUpdate::Finish(ExecutionReport {
+    let _ = report_tx.send(ExecMessage::Finish(ExecCode {
         command_number,
         exit_code: exit_code::get_exit_code(status),
     }));

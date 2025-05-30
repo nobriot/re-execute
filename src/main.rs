@@ -1,7 +1,7 @@
 use anyhow::Result;
 use clap::Parser;
 use colored::Colorize;
-use command::execution_report::ExecutionUpdate;
+use command::execution_report::ExecMessage;
 use key_input::KeyInputMessage;
 use notify::*;
 use std::path::{PathBuf, absolute};
@@ -62,7 +62,7 @@ fn run() -> Result<()> {
         file_watchers.push((watcher, rx, p));
     }
 
-    let (report_tx, report_rx) = std::sync::mpsc::channel::<ExecutionUpdate>();
+    let (report_tx, report_rx) = std::sync::mpsc::channel::<ExecMessage>();
     let (key_input_tx, key_input_rx) = std::sync::mpsc::channel::<KeyInputMessage>();
 
     // Start the command queue
