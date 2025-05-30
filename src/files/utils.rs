@@ -40,13 +40,13 @@ fn parse_ignore_file(path: &Path) -> IgnoreRules {
     let mut rules = IgnoreRules { rules: Vec::new(), rule_path: path.to_path_buf() };
 
     if let Ok(file) = std::fs::File::open(path) {
-        for line in BufReader::new(file).lines().flatten() {
+        for line in BufReader::new(file).lines().map_while(Result::ok) {
             let line = line.trim();
             if line.is_empty() || line.starts_with("#") {
                 continue;
             }
             let is_negated = line.starts_with("!");
-            let pattern = if is_negated { &line[1..] } else { &line };
+            let pattern = if is_negated { &line[1..] } else { line };
             rules.rules.push(IgnoreRule { pattern: pattern.to_string(), is_negated });
         }
     } else {
@@ -133,7 +133,7 @@ pub fn should_be_ignored(filename: &PathBuf, args: &Args, watch: &PathBuf) -> bo
 /// Checks if the filename extensions is part of our allow-list
 /// Returns true if the allow-list is empty
 /// if the extension "" is passed, files without extension will match
-pub fn extension_matches(filename: &PathBuf, allowed_extensions: &[String]) -> bool {
+pub fn extension_matches(filename: &Path, allowed_extensions: &[String]) -> bool {
     if allowed_extensions.is_empty() {
         return true;
     }
@@ -161,7 +161,7 @@ pub fn is_git_ignored(filename: &PathBuf, watch: &PathBuf) -> bool {
             if !rule.is_negated {
                 continue;
             }
-            if matches_rule(&abs_path, &rule, &ignore_rules.rule_path) {
+            if matches_rule(&abs_path, rule, &ignore_rules.rule_path) {
                 return false;
             }
         }
@@ -173,7 +173,7 @@ pub fn is_git_ignored(filename: &PathBuf, watch: &PathBuf) -> bool {
             if rule.is_negated {
                 continue;
             }
-            if matches_rule(&abs_path, &rule, &ignore_rules.rule_path) {
+            if matches_rule(&abs_path, rule, &ignore_rules.rule_path) {
                 return true;
             }
         }
@@ -183,8 +183,8 @@ pub fn is_git_ignored(filename: &PathBuf, watch: &PathBuf) -> bool {
 }
 
 /// Checks if the file or any parent directory is hidden
-pub fn is_hidden(filename: &PathBuf, watch: &PathBuf) -> bool {
-    let mut path = filename.clone();
+pub fn is_hidden(filename: &Path, watch: &PathBuf) -> bool {
+    let mut path = filename.to_path_buf();
 
     loop {
         if is_file_hidden(&path) {
@@ -203,7 +203,7 @@ pub fn is_hidden(filename: &PathBuf, watch: &PathBuf) -> bool {
 }
 
 /// Checks if a single file is hidden.
-fn is_file_hidden(filename: &PathBuf) -> bool {
+fn is_file_hidden(filename: &Path) -> bool {
     if let Some(basename) = filename.file_name() {
         if basename.to_string_lossy().starts_with(".") {
             return true;

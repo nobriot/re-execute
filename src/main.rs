@@ -66,12 +66,11 @@ fn run() -> Result<()> {
     let (key_input_tx, key_input_rx) = std::sync::mpsc::channel::<KeyInputMessage>();
 
     // Start the command queue
-    let command_queue_tx = Queue::new(&args, report_tx);
+    let command_queue_tx = Queue::start(&args, report_tx);
     std::thread::spawn(move || key_input::monitor_key_inputs(key_input_tx));
 
     // UI output
-    let mut output = Output::new();
-    output.print_title(&args);
+    let mut output = Output::new(&args);
 
     // Event loop
     loop {

@@ -27,11 +27,9 @@ pub struct Args {
         trailing_var_arg = true,
         help = "Command/program to run",
         long_help = r#"Command/program to run
-Running one command per updated file:
-  Use {file} to include the updated file as argument
-
-Running one command for all updated files:
-  Use {files} to include the updated files as argument
+Placeholders:
+  Use {file} to substitue the updated file in the command
+  Use {files} to substitue all updated files in the command
   By default if no context is present, one command will be run for all executed files"#
     )]
     pub command: Vec<String>,
@@ -44,8 +42,13 @@ Running one command for all updated files:
     #[arg(long, default_value_t = 200)]
     pub poll_interval: u64,
 
-    /// Suppress program's stdout/stderr
-    /// TODO: Implement this
+    //// Regex to match files against
+    /// TODO: Implement me
+    // #[arg(short, long)]
+    // pub regex: Vec<String>,
+
+    //
+    /// Suppress child programs stdout/stderr
     #[arg(short, long)]
     pub quiet: bool,
 
@@ -67,7 +70,7 @@ Running one command for all updated files:
     pub abort_previous: bool,
 
     /// Shell used to spawn the command
-    /// Not possible to specify manually
+    /// Not possible to specify manually for now
     #[clap(skip)]
     pub shell: &'static str,
 

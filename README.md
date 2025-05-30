@@ -25,8 +25,14 @@ You will have to escape commands with quotes if they contain tokens interpreted
 by the shell, e.g. `&&`:
 
 ```console
-rex -f ~/Desktop "sleep 20 && echo {file}"
+rex -f ~/Desktop "sleep 6 && echo {file}"
 ```
+
+### Parameters
+
+* `-q` / `--quiet`: Do not print children's stdout/stderr messages
+
+### Examples
 
 Run plantuml every time a puml file is modified in the current directory: 
 

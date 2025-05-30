@@ -3,7 +3,7 @@ use crate::command::QueueMessage;
 use crate::errors::ProgramErrors;
 use anyhow::Result;
 use std::collections::HashSet;
-use std::io::Read;
+use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
@@ -12,6 +12,8 @@ use std::sync::mpsc::{Receiver, Sender};
 // Same module
 use crate::command::execution_report::{ExecutionReport, ExecutionStart, ExecutionUpdate};
 use crate::command::exit_code;
+
+use super::execution_report::ExecutionOutput;
 
 pub struct Queue {
     /// Shell to use to to spawn the command
@@ -31,7 +33,7 @@ pub struct Queue {
 }
 
 impl Queue {
-    pub fn new(
+    pub fn start(
         args: &Args,
         report_tx: Sender<ExecutionUpdate>,
     ) -> std::sync::mpsc::Sender<QueueMessage> {
@@ -215,27 +217,54 @@ pub fn run_command(
     report_tx: Sender<ExecutionUpdate>,
 ) {
     let mut child = command.spawn().expect("Command could not start");
+
+    // Send stdout updates to tx reports
+    let stdout = BufReader::new(child.stdout.take().unwrap());
+    let stdout_tx = report_tx.clone();
+    let stdout_handle = std::thread::spawn(move || {
+        for line in stdout.lines() {
+            let line = line.unwrap();
+            let _ = stdout_tx.send(ExecutionUpdate::Output(ExecutionOutput {
+                command_number,
+                stdout: Some(line),
+                stderr: None,
+            }));
+        }
+    });
+
+    // Send stderr updates to tx reports
+    let stderr = BufReader::new(child.stderr.take().unwrap());
+    let stderr_tx = report_tx.clone();
+    let stderr_handle = std::thread::spawn(move || {
+        for line in stderr.lines() {
+            let line = line.unwrap();
+            let _ = stderr_tx.send(ExecutionUpdate::Output(ExecutionOutput {
+                command_number,
+                stdout: None,
+                stderr: Some(line),
+            }));
+        }
+    });
+    // let stdout = if let Some(mut stdout) = child.stdout.take() {
+    //     let mut output = String::new();
+    //     let _ = stdout.read_to_string(&mut output);
+    //     Some(output)
+    // } else {
+    //     None
+    // };
+    // let stderr = if let Some(mut stderr) = child.stderr.take() {
+    //     let mut output = String::new();
+    //     let _ = stderr.read_to_string(&mut output);
+    //     Some(output)
+    // } else {
+    //     None
+    // };
+    stdout_handle.join().unwrap();
+    stderr_handle.join().unwrap();
+
     let status = child.wait().expect("command could not finish");
-
-    let stdout = if let Some(mut stdout) = child.stdout.take() {
-        let mut output = String::new();
-        let _ = stdout.read_to_string(&mut output);
-        Some(output)
-    } else {
-        None
-    };
-    let stderr = if let Some(mut stderr) = child.stderr.take() {
-        let mut output = String::new();
-        let _ = stderr.read_to_string(&mut output);
-        Some(output)
-    } else {
-        None
-    };
-
     let _ = report_tx.send(ExecutionUpdate::Finish(ExecutionReport {
         command_number,
         exit_code: exit_code::get_exit_code(status),
-        stdout,
-        stderr,
     }));
 }

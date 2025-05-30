@@ -3,6 +3,7 @@ use crate::command::exit_code::ExitCode;
 #[derive(Debug)]
 pub enum ExecutionUpdate {
     Start(ExecutionStart),
+    Output(ExecutionOutput),
     Finish(ExecutionReport),
 }
 
@@ -30,8 +31,4 @@ pub struct ExecutionReport {
     pub command_number: usize,
     /// Exit code
     pub exit_code: ExitCode,
-    /// Captured stdout
-    pub stdout: Option<String>,
-    /// Captured stderr
-    pub stderr: Option<String>,
 }
