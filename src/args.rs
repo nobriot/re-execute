@@ -43,7 +43,7 @@ Placeholders:
     pub poll_interval: u64,
 
     //// Regex to match files against
-    /// TODO: Implement me
+    // TODO: Implement me
     // #[arg(short, long)]
     // pub regex: Vec<String>,
 

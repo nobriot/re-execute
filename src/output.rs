@@ -12,6 +12,7 @@ pub static PROGRAM_NAME: &str = env!("CARGO_PKG_NAME");
 const DEFAULT_TICK_DURATION_MS: u64 = 100;
 // const TICK_STRINGS: [&str; 8] = ["⢹", "⢺", "⢼", "⣸", "⣇", "⡧", "⡗", "⡏"];
 const TICK_CHARS: &str = "⣼⣹⢻⠿⡟⣏⣧⣶ ";
+const NUMBER_OF_PB_ON_SCREEN: usize = 10;
 
 /// Helper to manage the output on the screen while
 /// the programm is running
@@ -69,11 +70,28 @@ impl Output {
         self.progress_bars.insert(0, pb);
     }
 
+    /// Checks the index of the last progress bar and remove old
+    /// progress bar that should not be on screen anymore
+    pub fn remove_old_progress_bars(&mut self, last_index: usize) {
+        if last_index <= NUMBER_OF_PB_ON_SCREEN {
+            return;
+        }
+        let pop_index = last_index - NUMBER_OF_PB_ON_SCREEN;
+        let pop_pb = self.progress_bars.remove(&pop_index);
+
+        if pop_pb.is_none() {
+            return;
+        }
+        let pop_pb = pop_pb.unwrap();
+        self.multi.remove(&pop_pb);
+    }
+
     /// Updates progress bars based on an exec report
     pub fn update(&mut self, update: ExecutionUpdate) {
         match update {
             ExecutionUpdate::Start(report) => {
                 let index = report.command_number + 1;
+                self.remove_old_progress_bars(index);
                 let pb = self.multi.insert(index, ProgressBar::new_spinner());
                 let files = report.files.join(", ");
                 pb.set_style(Self::progress_bar_style());
