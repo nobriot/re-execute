@@ -61,7 +61,7 @@ Placeholders:
     pub no_gitignore: bool,
 
     /// Invoke the command also when files are deleted and no longer exist
-    #[arg(long)]
+    #[arg(short, long)]
     pub deleted: bool,
 
     /// Indicates if we abort previous ongoing commands
@@ -87,12 +87,12 @@ impl Args {
         // Also convert all extensions to lowercase to compare
         self.extensions.iter_mut().for_each(|s| {
             *s = s.to_lowercase();
-            *s = s.strip_prefix(".").unwrap_or(s).to_string()
+            *s = s.strip_prefix(".").unwrap_or(s).to_string();
         });
 
         // If no files are passed, we watch the current directory for changes
         if self.files.is_empty() {
-            self.files.push(String::from("."))
+            self.files.push(String::from("."));
         }
 
         // Ensure we have a command to execute

@@ -92,6 +92,7 @@ fn matches_rule(file: &Path, rule: &IgnoreRule, dir: &Path) -> bool {
         // Handle those wildcards
         // TODO: This does not handle all cases ... e.g. if greediness swallows a part match
         // ALso does not respect directory levels
+        // Also we need handling of ?
         let parts: Vec<&str> = rule.pattern.split("*").collect();
         let mut idx = 0;
         let mut matched = true;

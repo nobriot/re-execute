@@ -21,14 +21,21 @@ pub struct Queue {
     /// Command to execute, with arguments
     command: Vec<String>,
     /// Files that have been updated - pending command execution
+    /// First pathbuf is the file, second is the watched file/dir
     files: HashSet<(PathBuf, PathBuf)>,
     /// Execution mode
     batch_exec: bool,
     /// Execute commands also if files are deleted
     deleted_files: bool,
+    /// Handle to receive QueueMessages
     rx: Receiver<QueueMessage>,
+    /// Handle to send QueueMessages to the queue.
+    tx: Sender<QueueMessage>,
+    /// Handle to send Execution Updates from the runner
     report_tx: Sender<ExecMessage>,
+    /// Timestamp of the last file update
     last_update: Option<std::time::Instant>,
+    /// Total command count.
     command_count: usize,
 }
 
@@ -45,6 +52,7 @@ impl Queue {
             batch_exec: args.batch_exec,
             deleted_files: args.deleted,
             rx,
+            tx: tx.clone(),
             report_tx,
             last_update: None,
             command_count: 0,
@@ -64,7 +72,6 @@ impl Queue {
                     }
                 }
                 Ok(QueueMessage::AddFile(p, watch)) => {
-                    // println!("Adding file: {:?} / Path: {:?}", p, watch);
                     let _ = self.files.insert((p, watch));
                     self.last_update = Some(std::time::Instant::now());
                 }
@@ -76,19 +83,12 @@ impl Queue {
             }
             if let Some(t) = self.last_update {
                 if t.elapsed() > std::time::Duration::from_millis(200) {
-                    let _ = self.execute();
-                    // let exec_result = self.execute();
-                    // if let Ok(report) = exec_result {
-                    //     // dbg!(&report);
-                    //     let tx_result = self.report_tx.send(ExecutionUpdate::Finish(report));
-                    //     if let Err(e) = tx_result {
-                    //         eprintln!("Exec Tx Report Channel error: {:?}", e);
-                    //         break;
-                    //     }
-                    // } else {
-                    //     eprintln!("Error with the queue trying to execute commands");
-                    //     break;
-                    // }
+                    let tx_result = self.execute();
+
+                    if let Err(e) = tx_result {
+                        eprintln!("Exec Tx Report Channel error: {:?}", e);
+                        return;
+                    }
 
                     if self.files.is_empty() {
                         self.last_update = None;
@@ -98,6 +98,11 @@ impl Queue {
         }
     }
 
+    //pub fn save_pid(&self)
+    //
+
+    /// Picks up the next file-batch and spawn a thread executing the
+    /// command
     pub fn execute(&mut self) -> Result<(), ProgramErrors> {
         if self.files.is_empty() {
             return Err(ProgramErrors::BadInternalState);
@@ -111,10 +116,14 @@ impl Queue {
         } else {
             self.files.drain().map(|(p, _)| p).collect()
         };
+        assert!(!p.is_empty(), "p should not be empty. Files: {:?}, ", self.files);
 
         // Remove deleted files unless we want them
         if !self.deleted_files {
             p.retain(|p| p.exists());
+        }
+        if p.is_empty() {
+            return Ok(());
         }
         let p = p; // Immutable now
         // dbg!(&p);
@@ -135,6 +144,7 @@ impl Queue {
         if !p.is_empty() {
             for arg in &self.command {
                 match arg {
+                    //FIXME: do this job once in args and just keep a pre-parsed vector for next time
                     a if a == FILE_SUBSTITUTION => command.arg(p[0].clone()),
                     a if a == FILES_SUBSTITUTION => command.args(p.clone()),
                     a if a.contains(FILE_SUBSTITUTION) => {
@@ -158,19 +168,17 @@ impl Queue {
         command.stderr(Stdio::piped());
 
         //dbg!(&command);
-        // println!("Running command: '{:?}'", command);
         let command_number = self.command_count;
         self.command_count += 1;
-        if let Err(e) = self.report_tx.send(ExecMessage::Start(ExecStart {
-            command_number,
-            files: p
-                .iter()
-                .map(|pb| pb.file_name().unwrap().to_string_lossy().into_owned())
-                .collect(),
-        })) {
-            eprintln!("Error running command: {:?}", e);
-            return Err(ProgramErrors::CommandExecutionError(e.to_string()));
-        }
+        self.report_tx
+            .send(ExecMessage::Start(ExecStart {
+                command_number,
+                files: p
+                    .iter()
+                    .map(|pb| pb.file_name().unwrap().to_string_lossy().into_owned())
+                    .collect(),
+            }))
+            .map_err(|e| ProgramErrors::CommandExecutionError(e.to_string()))?;
 
         let tx_clone = self.report_tx.clone();
         std::thread::spawn(move || run_command(command_number, command, tx_clone));
@@ -209,24 +217,14 @@ pub fn run_command(command_number: usize, mut command: Command, report_tx: Sende
             }));
         }
     });
-    // let stdout = if let Some(mut stdout) = child.stdout.take() {
-    //     let mut output = String::new();
-    //     let _ = stdout.read_to_string(&mut output);
-    //     Some(output)
-    // } else {
-    //     None
-    // };
-    // let stderr = if let Some(mut stderr) = child.stderr.take() {
-    //     let mut output = String::new();
-    //     let _ = stderr.read_to_string(&mut output);
-    //     Some(output)
-    // } else {
-    //     None
-    // };
+
+    //let _ = queue_tx.send(QueueMessage::PidStarted(command_number, child.id()));
+
     stdout_handle.join().unwrap();
     stderr_handle.join().unwrap();
-
     let status = child.wait().expect("command could not finish");
+
+    //let _ = queue_tx.send(QueueMessage::PidFinished(command_number, child.id()));
     let _ = report_tx.send(ExecMessage::Finish(ExecCode {
         command_number,
         exit_code: exit_code::get_exit_code(status),

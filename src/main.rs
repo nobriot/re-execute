@@ -69,7 +69,7 @@ fn run() -> Result<()> {
     let command_queue_tx = Queue::start(&args, report_tx);
     std::thread::spawn(move || key_input::monitor_key_inputs(key_input_tx));
 
-    // UI output
+    // Printout / output
     let mut output = Output::new(&args);
 
     // Event loop
@@ -81,11 +81,8 @@ fn run() -> Result<()> {
                     let event = event.unwrap();
                     match event.kind {
                         EventKind::Modify(_) | EventKind::Remove(_) => {
-                            // debug!("File modified: {:?}", event.paths);
                             for p in &event.paths {
                                 if should_be_ignored(p, &args, watch) {
-                                    // println!("Ignoring update for {:?}", p);
-                                    // test
                                     continue;
                                 }
 

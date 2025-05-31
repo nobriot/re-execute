@@ -27,6 +27,8 @@ pub struct Output {
     file_list_cache: HashMap<usize, String>,
     /// Whether we print programs' output or not
     quiet: bool,
+    /// Are we printing "files" or "file"
+    file_str: &'static str,
 }
 
 impl Output {
@@ -44,6 +46,7 @@ impl Output {
             progress_bars: HashMap::new(),
             file_list_cache: HashMap::new(),
             quiet: args.quiet,
+            file_str: if args.batch_exec { "files" } else { "file" },
         };
 
         output.print_title();
@@ -96,7 +99,7 @@ impl Output {
                 let files = report.files.join(", ");
                 pb.set_style(Self::progress_bar_style());
                 pb.set_prefix(format!("#{}.", index).bright_black().to_string());
-                pb.set_message(format!("{}: {}", "files".bold(), files));
+                pb.set_message(format!("{}: {}", self.file_str.bold(), files));
                 pb.enable_steady_tick(Duration::from_millis(DEFAULT_TICK_DURATION_MS));
                 self.progress_bars.insert(index, pb);
                 self.file_list_cache.insert(index, files);
@@ -124,7 +127,7 @@ impl Output {
                         .bright_black()
                         .to_string(),
                 );
-                pb.set_message(format!("{}: {}", "files".bold(), files));
+                pb.set_message(format!("{}: {}", self.file_str.bold(), files));
                 pb.finish();
             }
         }
