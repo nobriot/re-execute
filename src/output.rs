@@ -125,7 +125,12 @@ impl Output {
             }
             ExecMessage::Finish(report) => {
                 let index = report.command_number + 1;
-                let pb = self.progress_bars.get_mut(&index).unwrap();
+                let pb = self.progress_bars.get_mut(&index);
+                // If progress bar disappeared (due to scrolling), we just ignore the update
+                if pb.is_none() {
+                    return;
+                }
+                let pb = pb.unwrap();
                 let files = self.file_list_cache.get(&index).expect("No cache error");
 
                 pb.set_style(Self::progress_bar_finished_style());

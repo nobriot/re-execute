@@ -2,7 +2,6 @@ use anyhow::Result;
 use clap::Parser;
 use colored::Colorize;
 use command::execution_report::ExecMessage;
-use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use key_input::KeyInputMessage;
 use notify::*;
 use std::path::{PathBuf, absolute};
@@ -28,9 +27,10 @@ use output::Output;
 
 fn main() {
     // Disable user input directly in the console
-    enable_raw_mode().expect("Could not enable raw mode");
+    //enable_raw_mode().expect("Could not enable raw mode");
+    //set_echo(false);
     let result = run();
-    disable_raw_mode().expect("Could not disable raw mode");
+    //disable_raw_mode().expect("Could not disable raw mode");
 
     match result {
         Ok(_) => {}
