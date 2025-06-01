@@ -1,7 +1,8 @@
 use anyhow::Result;
 use clap::Parser;
 use colored::Colorize;
-use crossbeam_channel::{Receiver, Select, unbounded};
+use crossbeam_channel::{Receiver, Select, Sender, unbounded};
+//use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use key_input::KeyInputMessage;
 use notify::*;
 use std::path::{PathBuf, absolute};
@@ -54,39 +55,13 @@ fn run() -> Result<()> {
 
     for f in &args.files {
         let (tx, rx) = unbounded::<Event>(); //std::sync::mpsc::channel();
-        let mut watcher: Box<dyn Watcher> =
-            if RecommendedWatcher::kind() == WatcherKind::PollWatcher {
-                let config =
-                    Config::default().with_poll_interval(Duration::from_millis(args.poll_interval));
-                Box::new(
-                    PollWatcher::new(
-                        move |res| {
-                            tx.send(Event::FileWatch(res))
-                                .expect("Could not send watch event to channel");
-                        },
-                        config,
-                    )
-                    .unwrap(),
-                )
-            } else {
-                Box::new(
-                    RecommendedWatcher::new(
-                        move |res| {
-                            tx.send(Event::FileWatch(res))
-                                .expect("Could not send watch event to channel");
-                        },
-                        Config::default(),
-                    )
-                    .unwrap(),
-                )
-            };
-
+        let mut watcher = get_watcher(tx, &args);
         let p = register_watch_for_file(&mut watcher, f)?;
         file_watchers.push(watcher);
         rx_with_path.push((rx, p));
     }
 
-    let (event_tx, event_rx) = unbounded::<Event>(); // std::sync::mpsc::channel::<ExecMessage>();
+    let (event_tx, event_rx) = unbounded::<Event>();
 
     // Start the command queue
     let tx_clone = event_tx.clone();
@@ -136,6 +111,7 @@ fn run() -> Result<()> {
             Ok(Event::Exec(update)) => output.update(update),
             Ok(Event::Key(KeyInputMessage::Quit)) => {
                 let _ = command_queue_tx.send(QueueMessage::Abort);
+                output.println("Quitting...");
                 output.finish();
                 return Ok(());
             }
@@ -144,60 +120,6 @@ fn run() -> Result<()> {
                 return Err(ProgramErrors::ChannelReceiveError(e.to_string()).into());
             }
         }
-
-        // // Receive FileWatch updates
-        // for (_, rx, watch) in &file_watchers {
-        //     match rx.try_recv() {
-        //         Ok(event) if event.is_ok() => {
-        //             let event = event.unwrap();
-        //             match event.kind {
-        //                 EventKind::Modify(_) | EventKind::Remove(_) => {
-        //                     for p in &event.paths {
-        //                         if should_be_ignored(p, &args, watch) {
-        //                             continue;
-        //                         }
-
-        //                         command_queue_tx
-        //                             .send(QueueMessage::AddFile(p.clone(), watch.clone()))?;
-        //                     }
-        //                 }
-        //                 _ => {}
-        //             }
-        //         }
-        //         Ok(event) if event.is_err() => {
-        //             eprintln!("Watch file error: {:?}", event);
-        //         }
-        //         Err(TryRecvError::Empty) => {}
-        //         Err(error) => return Err(ProgramErrors::FileWatchError(error.to_string()).into()),
-        //         _ => {}
-        //     }
-        // }
-
-        // Receive Execution report updates
-        // match report_rx.try_recv() {
-        //     Ok(Event::Exec(update)) => output.update(update),
-        //     Ok(_) => {}
-        //     //Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
-        //     Err(TryRecvError::Empty) => {}
-        //     Err(e) => {
-        //         return Err(ProgramErrors::CommandExecutionError(e.to_string()).into());
-        //     }
-        // }
-
-        // Receive user key inputs
-        // match key_input_rx.try_recv() {
-        //     Ok(Event::Key(KeyInputMessage::Quit)) => {
-        //         let _ = command_queue_tx.send(QueueMessage::Abort);
-        //         output.finish();
-        //         return Ok(());
-        //     }
-        //     Err(TryRecvError::Empty) => {}
-        //     Err(e) => {
-        //         //dbg!(e);
-        //         return Err(ProgramErrors::ChannelReceiveError(e.to_string()).into());
-        //     }
-        // }
-        //std::thread::sleep(Duration::from_millis(100));
     }
 }
 
@@ -235,4 +157,29 @@ fn register_watch_for_file(
     Ok(p)
 }
 
-//fn handle_file_watch_event() {}
+/// Gets the recommended watcher using the Sender
+fn get_watcher(tx: Sender<Event>, args: &Args) -> Box<dyn Watcher> {
+    if RecommendedWatcher::kind() == WatcherKind::PollWatcher {
+        let config =
+            Config::default().with_poll_interval(Duration::from_millis(args.poll_interval));
+        Box::new(
+            PollWatcher::new(
+                move |res| {
+                    tx.send(Event::FileWatch(res)).expect("Could not send watch event to channel");
+                },
+                config,
+            )
+            .unwrap(),
+        )
+    } else {
+        Box::new(
+            RecommendedWatcher::new(
+                move |res| {
+                    tx.send(Event::FileWatch(res)).expect("Could not send watch event to channel");
+                },
+                Config::default(),
+            )
+            .unwrap(),
+        )
+    }
+}

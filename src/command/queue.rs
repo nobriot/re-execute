@@ -3,8 +3,9 @@ use std::collections::HashSet;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
+use std::thread::JoinHandle;
 
-use crossbeam_channel::{Receiver, Sender, TryRecvError};
+use crossbeam_channel::{Receiver, RecvTimeoutError, Sender};
 use std::process::ExitStatus;
 use std::sync::{
     Arc,
@@ -23,6 +24,12 @@ use crate::errors::ProgramErrors;
 use crate::event::Event;
 
 use super::exit_code::ExitCode;
+
+macro_rules! send_msg {
+    ($tx:ident, $q_msg:expr) => {
+        let _ = $tx.send(Event::Exec($q_msg));
+    };
+}
 
 // TODO Make a set of workers, avoiding to spawn a million threads
 pub struct Queue {
@@ -74,8 +81,7 @@ impl Queue {
 
     pub fn run(&mut self) {
         loop {
-            std::thread::sleep(Duration::from_millis(100));
-            match self.rx.try_recv() {
+            match self.rx.recv_timeout(Duration::from_millis(100)) {
                 Ok(QueueMessage::Abort) => break,
                 Ok(QueueMessage::RestartBackoff) => {
                     if !self.files.is_empty() {
@@ -86,7 +92,7 @@ impl Queue {
                     let _ = self.files.insert((p, watch));
                     self.last_update = Some(std::time::Instant::now());
                 }
-                Err(TryRecvError::Empty) => {}
+                Err(RecvTimeoutError::Timeout) => {}
                 Err(e) => {
                     eprintln!("Channel error: {:?}", e);
                     break;
@@ -191,7 +197,7 @@ impl Queue {
 
         let tx_clone = self.report_tx.clone();
         let abort = self.abort.clone();
-        std::thread::spawn(move || run_command(command_number, command, tx_clone, abort));
+        let _ = std::thread::spawn(move || run_command(command_number, command, tx_clone, abort));
 
         Ok(())
     }
@@ -211,11 +217,14 @@ pub fn run_command(
     let stdout_handle = std::thread::spawn(move || {
         for line in stdout.lines() {
             let line = line.unwrap();
-            let _ = stdout_tx.send(Event::Exec(ExecMessage::Output(ExecOutput {
-                command_number,
-                stdout: Some(line),
-                stderr: None,
-            })));
+            send_msg!(
+                stdout_tx,
+                ExecMessage::Output(ExecOutput {
+                    command_number,
+                    stdout: Some(line),
+                    stderr: None,
+                })
+            );
         }
     });
 
@@ -225,11 +234,14 @@ pub fn run_command(
     let stderr_handle = std::thread::spawn(move || {
         for line in stderr.lines() {
             let line = line.unwrap();
-            let _ = stderr_tx.send(Event::Exec(ExecMessage::Output(ExecOutput {
-                command_number,
-                stdout: None,
-                stderr: Some(line),
-            })));
+            send_msg!(
+                stderr_tx,
+                ExecMessage::Output(ExecOutput {
+                    command_number,
+                    stdout: None,
+                    stderr: Some(line),
+                })
+            );
         }
     });
 
@@ -246,6 +258,8 @@ pub fn run_command(
         if abort.load(Ordering::SeqCst) {
             let _ = child.kill();
         }
+        // Avoid polling with too much excitement and avoid a CPU spin
+        std::thread::sleep(Duration::from_millis(40));
     };
 
     stdout_handle.join().unwrap();
@@ -256,6 +270,5 @@ pub fn run_command(
         None => None,
     };
 
-    let _ =
-        report_tx.send(Event::Exec(ExecMessage::Finish(ExecCode { command_number, exit_code })));
+    send_msg!(report_tx, ExecMessage::Finish(ExecCode { command_number, exit_code }));
 }
