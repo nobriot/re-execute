@@ -4,12 +4,13 @@ use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
+use crossbeam_channel::{Receiver, Sender, TryRecvError};
 use std::process::ExitStatus;
-use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
 };
+use std::time::Duration;
 
 // Same module
 use crate::command::QueueMessage;
@@ -19,9 +20,11 @@ use crate::command::exit_code;
 
 use crate::args::{Args, FILE_SUBSTITUTION, FILES_SUBSTITUTION};
 use crate::errors::ProgramErrors;
+use crate::event::Event;
 
 use super::exit_code::ExitCode;
 
+// TODO Make a set of workers, avoiding to spawn a million threads
 pub struct Queue {
     /// Shell to use to to spawn the command
     shell: &'static str,
@@ -37,7 +40,7 @@ pub struct Queue {
     /// Handle to receive QueueMessages
     rx: Receiver<QueueMessage>,
     /// Handle to send Execution Updates from the runner
-    report_tx: Sender<ExecMessage>,
+    report_tx: Sender<Event>,
     /// Timestamp of the last file update
     last_update: Option<std::time::Instant>,
     /// Total command count.
@@ -49,11 +52,8 @@ pub struct Queue {
 }
 
 impl Queue {
-    pub fn start(
-        args: &Args,
-        report_tx: Sender<ExecMessage>,
-    ) -> std::sync::mpsc::Sender<QueueMessage> {
-        let (tx, rx) = std::sync::mpsc::channel();
+    pub fn start(args: &Args, report_tx: Sender<Event>) -> Sender<QueueMessage> {
+        let (tx, rx) = crossbeam_channel::unbounded();
         let mut queue = Self {
             shell: args.shell,
             command: args.command.clone(),
@@ -74,6 +74,7 @@ impl Queue {
 
     pub fn run(&mut self) {
         loop {
+            std::thread::sleep(Duration::from_millis(100));
             match self.rx.try_recv() {
                 Ok(QueueMessage::Abort) => break,
                 Ok(QueueMessage::RestartBackoff) => {
@@ -85,7 +86,7 @@ impl Queue {
                     let _ = self.files.insert((p, watch));
                     self.last_update = Some(std::time::Instant::now());
                 }
-                Err(std::sync::mpsc::TryRecvError::Empty) => {}
+                Err(TryRecvError::Empty) => {}
                 Err(e) => {
                     eprintln!("Channel error: {:?}", e);
                     break;
@@ -179,13 +180,13 @@ impl Queue {
         let command_number = self.command_count;
         self.command_count += 1;
         self.report_tx
-            .send(ExecMessage::Start(ExecStart {
+            .send(Event::Exec(ExecMessage::Start(ExecStart {
                 command_number,
                 files: p
                     .iter()
                     .map(|pb| pb.file_name().unwrap().to_string_lossy().into_owned())
                     .collect(),
-            }))
+            })))
             .map_err(|e| ProgramErrors::CommandExecutionError(e.to_string()))?;
 
         let tx_clone = self.report_tx.clone();
@@ -199,7 +200,7 @@ impl Queue {
 pub fn run_command(
     command_number: usize,
     mut command: Command,
-    report_tx: Sender<ExecMessage>,
+    report_tx: Sender<Event>,
     abort: Arc<AtomicBool>,
 ) {
     let mut child = command.spawn().expect("Command could not start");
@@ -210,11 +211,11 @@ pub fn run_command(
     let stdout_handle = std::thread::spawn(move || {
         for line in stdout.lines() {
             let line = line.unwrap();
-            let _ = stdout_tx.send(ExecMessage::Output(ExecOutput {
+            let _ = stdout_tx.send(Event::Exec(ExecMessage::Output(ExecOutput {
                 command_number,
                 stdout: Some(line),
                 stderr: None,
-            }));
+            })));
         }
     });
 
@@ -224,11 +225,11 @@ pub fn run_command(
     let stderr_handle = std::thread::spawn(move || {
         for line in stderr.lines() {
             let line = line.unwrap();
-            let _ = stderr_tx.send(ExecMessage::Output(ExecOutput {
+            let _ = stderr_tx.send(Event::Exec(ExecMessage::Output(ExecOutput {
                 command_number,
                 stdout: None,
                 stderr: Some(line),
-            }));
+            })));
         }
     });
 
@@ -255,5 +256,6 @@ pub fn run_command(
         None => None,
     };
 
-    let _ = report_tx.send(ExecMessage::Finish(ExecCode { command_number, exit_code }));
+    let _ =
+        report_tx.send(Event::Exec(ExecMessage::Finish(ExecCode { command_number, exit_code })));
 }

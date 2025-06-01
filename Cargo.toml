@@ -25,6 +25,7 @@ shell-words = "1.1.0"
 same-file = "1.0.6"
 indicatif = "0.17.11"
 crossterm = "0.29.0"
+crossbeam-channel = "0.5.15"
 
 [profile.release]
 lto = true

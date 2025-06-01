@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+/// Messages issued to the command queue
 pub enum QueueMessage {
     /// Tell the queue to stop.
     Abort,
