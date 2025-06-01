@@ -73,6 +73,7 @@ fn run() -> Result<()> {
     let mut output = Output::new(&args);
 
     // Event loop
+    // Probably not the best polling mechanism here.
     loop {
         // Receive FileWatch updates
         for (_, rx, watch) in &file_watchers {

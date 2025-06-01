@@ -1,19 +1,26 @@
-use crate::args::{Args, FILE_SUBSTITUTION, FILES_SUBSTITUTION};
-use crate::command::QueueMessage;
-use crate::errors::ProgramErrors;
 use anyhow::Result;
 use std::collections::HashSet;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
+use std::process::ExitStatus;
 use std::sync::mpsc::{Receiver, Sender};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 
 // Same module
+use crate::command::QueueMessage;
+use crate::command::execution_report::ExecOutput;
 use crate::command::execution_report::{ExecCode, ExecMessage, ExecStart};
 use crate::command::exit_code;
 
-use super::execution_report::ExecOutput;
+use crate::args::{Args, FILE_SUBSTITUTION, FILES_SUBSTITUTION};
+use crate::errors::ProgramErrors;
+
+use super::exit_code::ExitCode;
 
 pub struct Queue {
     /// Shell to use to to spawn the command
@@ -29,14 +36,16 @@ pub struct Queue {
     deleted_files: bool,
     /// Handle to receive QueueMessages
     rx: Receiver<QueueMessage>,
-    /// Handle to send QueueMessages to the queue.
-    tx: Sender<QueueMessage>,
     /// Handle to send Execution Updates from the runner
     report_tx: Sender<ExecMessage>,
     /// Timestamp of the last file update
     last_update: Option<std::time::Instant>,
     /// Total command count.
     command_count: usize,
+    /// Do we abort previous commands?
+    abort_previous: bool,
+    /// Abort signal for workers
+    abort: Arc<AtomicBool>,
 }
 
 impl Queue {
@@ -52,10 +61,11 @@ impl Queue {
             batch_exec: args.batch_exec,
             deleted_files: args.deleted,
             rx,
-            tx: tx.clone(),
             report_tx,
             last_update: None,
             command_count: 0,
+            abort_previous: args.abort_previous,
+            abort: Arc::new(AtomicBool::new(false)),
         };
 
         std::thread::spawn(move || queue.run());
@@ -98,9 +108,6 @@ impl Queue {
         }
     }
 
-    //pub fn save_pid(&self)
-    //
-
     /// Picks up the next file-batch and spawn a thread executing the
     /// command
     pub fn execute(&mut self) -> Result<(), ProgramErrors> {
@@ -141,31 +148,32 @@ impl Queue {
         }
 
         // File the arguments, replace the placeholders
-        if !p.is_empty() {
-            for arg in &self.command {
-                match arg {
-                    //FIXME: do this job once in args and just keep a pre-parsed vector for next time
-                    a if a == FILE_SUBSTITUTION => command.arg(p[0].clone()),
-                    a if a == FILES_SUBSTITUTION => command.args(p.clone()),
-                    a if a.contains(FILE_SUBSTITUTION) => {
-                        command.arg(a.replace(FILE_SUBSTITUTION, p[0].to_string_lossy().as_ref()))
-                    }
-                    a if a.contains(FILES_SUBSTITUTION) => command.arg(
-                        a.replace(
-                            FILES_SUBSTITUTION,
-                            p.iter()
-                                .map(|pb| pb.to_string_lossy())
-                                .collect::<Vec<_>>()
-                                .join(" ")
-                                .as_str(),
-                        ),
-                    ),
-                    a => command.args([a]),
-                };
-            }
+        for arg in &self.command {
+            match arg {
+                //FIXME: do this job once in args and just keep a pre-parsed vector for next time
+                a if a == FILE_SUBSTITUTION => command.arg(p[0].clone()),
+                a if a == FILES_SUBSTITUTION => command.args(p.clone()),
+                a if a.contains(FILE_SUBSTITUTION) => {
+                    command.arg(a.replace(FILE_SUBSTITUTION, p[0].to_string_lossy().as_ref()))
+                }
+                a if a.contains(FILES_SUBSTITUTION) => command.arg(a.replace(
+                    FILES_SUBSTITUTION,
+                    p.iter().map(|pb| pb.to_string_lossy()).collect::<Vec<_>>().join(" ").as_str(),
+                )),
+                a => command.args([a]),
+            };
         }
         command.stdout(Stdio::piped());
         command.stderr(Stdio::piped());
+
+        // Abort previous commands if needed
+        if self.abort_previous {
+            //FIXME: There is for sure a better way to do this
+            self.abort.store(true, Ordering::SeqCst);
+            std::thread::yield_now();
+
+            self.abort.store(false, Ordering::SeqCst);
+        }
 
         //dbg!(&command);
         let command_number = self.command_count;
@@ -181,13 +189,19 @@ impl Queue {
             .map_err(|e| ProgramErrors::CommandExecutionError(e.to_string()))?;
 
         let tx_clone = self.report_tx.clone();
-        std::thread::spawn(move || run_command(command_number, command, tx_clone));
+        let abort = self.abort.clone();
+        std::thread::spawn(move || run_command(command_number, command, tx_clone, abort));
 
         Ok(())
     }
 }
 
-pub fn run_command(command_number: usize, mut command: Command, report_tx: Sender<ExecMessage>) {
+pub fn run_command(
+    command_number: usize,
+    mut command: Command,
+    report_tx: Sender<ExecMessage>,
+    abort: Arc<AtomicBool>,
+) {
     let mut child = command.spawn().expect("Command could not start");
 
     // Send stdout updates to tx reports
@@ -218,15 +232,28 @@ pub fn run_command(command_number: usize, mut command: Command, report_tx: Sende
         }
     });
 
-    //let _ = queue_tx.send(QueueMessage::PidStarted(command_number, child.id()));
+    // Check atomic bool / try wait
+    let status: Option<ExitStatus> = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break Some(status),
+            Ok(None) => {
+                // Command is running, wait more
+            }
+            Err(_) => break None,
+        }
+
+        if abort.load(Ordering::SeqCst) {
+            let _ = child.kill();
+        }
+    };
 
     stdout_handle.join().unwrap();
     stderr_handle.join().unwrap();
-    let status = child.wait().expect("command could not finish");
 
-    //let _ = queue_tx.send(QueueMessage::PidFinished(command_number, child.id()));
-    let _ = report_tx.send(ExecMessage::Finish(ExecCode {
-        command_number,
-        exit_code: exit_code::get_exit_code(status),
-    }));
+    let exit_code: ExitCode = match status {
+        Some(s) => exit_code::get_exit_code(s),
+        None => None,
+    };
+
+    let _ = report_tx.send(ExecMessage::Finish(ExecCode { command_number, exit_code }));
 }
