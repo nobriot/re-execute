@@ -89,6 +89,13 @@ impl Output {
         self.multi.remove(&pop_pb);
     }
 
+    /// Finishes all the progres bars
+    pub fn finish(&mut self) {
+        for (_, pb) in &self.progress_bars {
+            pb.finish();
+        }
+    }
+
     /// Updates progress bars based on an exec report
     pub fn update(&mut self, update: ExecMessage) {
         match update {

@@ -2,6 +2,7 @@ use anyhow::Result;
 use clap::Parser;
 use colored::Colorize;
 use command::execution_report::ExecMessage;
+use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use key_input::KeyInputMessage;
 use notify::*;
 use std::path::{PathBuf, absolute};
@@ -26,7 +27,12 @@ pub mod output;
 use output::Output;
 
 fn main() {
-    match run() {
+    // Disable user input directly in the console
+    enable_raw_mode().expect("Could not enable raw mode");
+    let result = run();
+    disable_raw_mode().expect("Could not disable raw mode");
+
+    match result {
         Ok(_) => {}
         Err(e) => {
             eprintln!("{} {} {:?}", output::PROGRAM_NAME.bold(), "error".red(), e);
@@ -73,7 +79,7 @@ fn run() -> Result<()> {
     let mut output = Output::new(&args);
 
     // Event loop
-    // Probably not the best polling mechanism here.
+    // FIXME: Probably not the best polling mechanism here.
     loop {
         // Receive FileWatch updates
         for (_, rx, watch) in &file_watchers {
@@ -115,8 +121,8 @@ fn run() -> Result<()> {
         // Receive user key inputs
         match key_input_rx.try_recv() {
             Ok(KeyInputMessage::Quit) => {
-                println!("Quitting!");
                 let _ = command_queue_tx.send(QueueMessage::Abort);
+                output.finish();
                 return Ok(());
             }
             Err(TryRecvError::Empty) => {}
@@ -126,7 +132,6 @@ fn run() -> Result<()> {
             }
         }
 
-        // Make sure not to busy loop
         std::thread::yield_now();
     }
 }
