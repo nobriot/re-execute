@@ -27,13 +27,12 @@ use crate::event::Event;
 
 use super::exit_code::ExitCode;
 
-macro_rules! send_msg {
+macro_rules! send_msg_unchecked {
     ($tx:ident, $q_msg:expr) => {
         let _ = $tx.send(Event::Exec($q_msg));
     };
 }
 
-// TODO Make a set of workers, avoiding to spawn a million threads
 pub struct Queue {
     /// Shell to use to to spawn the command
     shell: &'static str,
@@ -261,7 +260,7 @@ pub fn run_command(
         None => None,
     };
 
-    send_msg!(report_tx, ExecMessage::Finish(ExecCode { command_number, exit_code }));
+    send_msg_unchecked!(report_tx, ExecMessage::Finish(ExecCode { command_number, exit_code }));
 }
 
 fn pipe_child_streams_to_events(
@@ -275,7 +274,7 @@ fn pipe_child_streams_to_events(
     let stdout_handle = std::thread::spawn(move || {
         for line in stdout.lines() {
             let line = line.unwrap();
-            send_msg!(
+            send_msg_unchecked!(
                 stdout_tx,
                 ExecMessage::Output(ExecOutput {
                     command_number,
@@ -292,7 +291,7 @@ fn pipe_child_streams_to_events(
     let stderr_handle = std::thread::spawn(move || {
         for line in stderr.lines() {
             let line = line.unwrap();
-            send_msg!(
+            send_msg_unchecked!(
                 stderr_tx,
                 ExecMessage::Output(ExecOutput {
                     command_number,
