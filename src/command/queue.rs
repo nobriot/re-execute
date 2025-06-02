@@ -13,6 +13,8 @@ use std::sync::{
 };
 use std::time::Duration;
 
+const MAX_CONCURRENT_WORKERS: usize = 3;
+
 // Same module
 use crate::command::QueueMessage;
 use crate::command::execution_report::ExecOutput;
@@ -40,6 +42,8 @@ pub struct Queue {
     /// Files that have been updated - pending command execution
     /// First pathbuf is the file, second is the watched file/dir
     files: HashSet<(PathBuf, PathBuf)>,
+    /// Do we keep the command outputs
+    pipe_command_output: bool,
     /// Execution mode
     batch_exec: bool,
     /// Execute commands also if files are deleted
@@ -56,6 +60,8 @@ pub struct Queue {
     abort_previous: bool,
     /// Abort signal for workers
     abort: Arc<AtomicBool>,
+    /// worker handles
+    workers: Vec<JoinHandle<()>>,
 }
 
 impl Queue {
@@ -65,6 +71,7 @@ impl Queue {
             shell: args.shell,
             command: args.command.clone(),
             files: HashSet::new(),
+            pipe_command_output: !args.quiet,
             batch_exec: args.batch_exec,
             deleted_files: args.deleted,
             rx,
@@ -73,6 +80,7 @@ impl Queue {
             command_count: 0,
             abort_previous: args.abort_previous,
             abort: Arc::new(AtomicBool::new(false)),
+            workers: Vec::with_capacity(MAX_CONCURRENT_WORKERS),
         };
 
         std::thread::spawn(move || queue.run());
@@ -81,6 +89,7 @@ impl Queue {
 
     pub fn run(&mut self) {
         loop {
+            // Receive messages
             match self.rx.recv_timeout(Duration::from_millis(100)) {
                 Ok(QueueMessage::Abort) => break,
                 Ok(QueueMessage::RestartBackoff) => {
@@ -98,6 +107,10 @@ impl Queue {
                     break;
                 }
             }
+            // remove finished workers
+            self.workers.retain(|w| !w.is_finished());
+
+            // See if we want to execute something
             if let Some(t) = self.last_update {
                 if t.elapsed() > std::time::Duration::from_millis(200) {
                     let tx_result = self.execute();
@@ -122,8 +135,26 @@ impl Queue {
             return Err(ProgramErrors::BadInternalState);
         }
 
+        // Remove deleted files unless we want them
+        if !self.deleted_files {
+            self.files.retain(|(p, _)| p.exists());
+        }
+
+        if self.files.is_empty() {
+            return Ok(());
+        }
+
+        // Abort previous commands if needed
+        if self.abort_previous && !self.workers.is_empty() {
+            self.abort.store(true, Ordering::SeqCst);
+            // We could probably use a rendezvous channel or something like that to make
+            // sure the other threads have read the value.
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        self.abort.store(false, Ordering::SeqCst);
+
         // Choose arguments based on the placeholders
-        let mut p: Vec<PathBuf> = if !self.batch_exec {
+        let p: Vec<PathBuf> = if !self.batch_exec {
             let paths = self.files.iter().next().unwrap().clone();
             self.files.remove(&paths);
             vec![paths.0]
@@ -132,16 +163,7 @@ impl Queue {
         };
         assert!(!p.is_empty(), "p should not be empty. Files: {:?}, ", self.files);
 
-        // Remove deleted files unless we want them
-        if !self.deleted_files {
-            p.retain(|p| p.exists());
-        }
-        if p.is_empty() {
-            return Ok(());
-        }
-        let p = p; // Immutable now
-        // dbg!(&p);
-
+        // Parse the command
         let shell_parts = shell_words::split(self.shell).map_err(|_| {
             ProgramErrors::CommandParseError(
                 self.shell.to_string(),
@@ -157,7 +179,7 @@ impl Queue {
         // File the arguments, replace the placeholders
         for arg in &self.command {
             match arg {
-                //FIXME: do this job once in args and just keep a pre-parsed vector for next time
+                //FIXME: do this job once in args and just keep a pre-parsed vector with gaps for the placeholders
                 a if a == FILE_SUBSTITUTION => command.arg(p[0].clone()),
                 a if a == FILES_SUBSTITUTION => command.args(p.clone()),
                 a if a.contains(FILE_SUBSTITUTION) => {
@@ -170,16 +192,12 @@ impl Queue {
                 a => command.args([a]),
             };
         }
-        command.stdout(Stdio::piped());
-        command.stderr(Stdio::piped());
-
-        // Abort previous commands if needed
-        if self.abort_previous {
-            //FIXME: There is for sure a better way to do this
-            self.abort.store(true, Ordering::SeqCst);
-            std::thread::yield_now();
-
-            self.abort.store(false, Ordering::SeqCst);
+        if self.pipe_command_output {
+            command.stdout(Stdio::piped());
+            command.stderr(Stdio::piped());
+        } else {
+            command.stdout(Stdio::null());
+            command.stderr(Stdio::null());
         }
 
         //dbg!(&command);
@@ -197,7 +215,10 @@ impl Queue {
 
         let tx_clone = self.report_tx.clone();
         let abort = self.abort.clone();
-        let _ = std::thread::spawn(move || run_command(command_number, command, tx_clone, abort));
+        let pipe_output = self.pipe_command_output;
+        self.workers.push(std::thread::spawn(move || {
+            run_command(command_number, command, tx_clone, abort, pipe_output)
+        }));
 
         Ok(())
     }
@@ -208,9 +229,46 @@ pub fn run_command(
     mut command: Command,
     report_tx: Sender<Event>,
     abort: Arc<AtomicBool>,
+    pipe_output: bool,
 ) {
     let mut child = command.spawn().expect("Command could not start");
 
+    // Send stdout updates to tx reports
+    if pipe_output {
+        let tx_clone = report_tx.clone();
+        let _ = pipe_child_streams_to_events(&mut child, tx_clone, command_number);
+    }
+
+    // Check atomic bool / try wait
+    let status: Option<ExitStatus> = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break Some(status),
+            Ok(None) => {
+                // Command is running, wait more
+            }
+            Err(_) => break None,
+        }
+
+        if abort.load(Ordering::SeqCst) {
+            let _ = child.kill();
+        }
+        // Avoid polling with too much excitement and avoid a CPU spin
+        std::thread::sleep(Duration::from_millis(40));
+    };
+
+    let exit_code: ExitCode = match status {
+        Some(s) => exit_code::get_exit_code(s),
+        None => None,
+    };
+
+    send_msg!(report_tx, ExecMessage::Finish(ExecCode { command_number, exit_code }));
+}
+
+fn pipe_child_streams_to_events(
+    child: &mut std::process::Child,
+    report_tx: Sender<Event>,
+    command_number: usize,
+) -> (JoinHandle<()>, JoinHandle<()>) {
     // Send stdout updates to tx reports
     let stdout = BufReader::new(child.stdout.take().unwrap());
     let stdout_tx = report_tx.clone();
@@ -245,30 +303,5 @@ pub fn run_command(
         }
     });
 
-    // Check atomic bool / try wait
-    let status: Option<ExitStatus> = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break Some(status),
-            Ok(None) => {
-                // Command is running, wait more
-            }
-            Err(_) => break None,
-        }
-
-        if abort.load(Ordering::SeqCst) {
-            let _ = child.kill();
-        }
-        // Avoid polling with too much excitement and avoid a CPU spin
-        std::thread::sleep(Duration::from_millis(40));
-    };
-
-    stdout_handle.join().unwrap();
-    stderr_handle.join().unwrap();
-
-    let exit_code: ExitCode = match status {
-        Some(s) => exit_code::get_exit_code(s),
-        None => None,
-    };
-
-    send_msg!(report_tx, ExecMessage::Finish(ExecCode { command_number, exit_code }));
+    (stdout_handle, stderr_handle)
 }

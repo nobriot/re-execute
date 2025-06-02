@@ -85,8 +85,9 @@ fn collect_ignore_rules(path: &Path, watch: &PathBuf) -> Vec<IgnoreRules> {
 /// Simple pattern matching from the gitignore file format
 /// It does not take into account the negation.
 fn matches_rule(file: &Path, rule: &IgnoreRule, dir: &Path) -> bool {
+    // FIXME: does not support []
+    // e.g. *.py[cov]
     // println!("Checking {:?} against {:?} - top level {:?}", file, rule, dir);
-    //
     let file_str = file.strip_prefix(dir).unwrap_or(file).to_string_lossy();
     if rule.pattern.contains("*") {
         // Handle those wildcards

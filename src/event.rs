@@ -1,5 +1,5 @@
 use crate::command::execution_report::ExecMessage;
-use crate::key_input::KeyInputMessage;
+use crate::term_events::TermEvents;
 
 /// Generic event that can be reported to the main thread
 #[derive(Debug)]
@@ -8,6 +8,6 @@ pub enum Event {
     FileWatch(notify::Result<notify::Event>),
     // A notification about a command being executed
     Exec(ExecMessage),
-    // A notification about a user input
-    Key(KeyInputMessage),
+    // A notification from a terminal event
+    Term(TermEvents),
 }

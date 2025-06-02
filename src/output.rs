@@ -12,7 +12,7 @@ pub static PROGRAM_NAME: &str = env!("CARGO_PKG_NAME");
 const DEFAULT_TICK_DURATION_MS: u64 = 100;
 // const TICK_STRINGS: [&str; 8] = ["⢹", "⢺", "⢼", "⣸", "⣇", "⡧", "⡗", "⡏"];
 const TICK_CHARS: &str = "⣼⣹⢻⠿⡟⣏⣧⣶ ";
-const NUMBER_OF_PB_ON_SCREEN: usize = 10;
+const NUMBER_OF_PB_ON_SCREEN: usize = 5;
 
 /// Helper to manage the output on the screen while
 /// the programm is running
@@ -65,6 +65,7 @@ impl Output {
         }
     }
 
+    /// Prints the top level title
     pub fn print_title(&mut self) {
         let pb = self.multi.insert(0, ProgressBar::no_length());
         pb.set_style(Self::progress_bar_plain_style());
@@ -91,8 +92,15 @@ impl Output {
 
     /// Finishes all the progres bars
     pub fn finish(&mut self) {
-        for (_, pb) in &self.progress_bars {
+        for pb in self.progress_bars.values() {
             pb.finish();
+        }
+    }
+
+    /// Redraws active progress bars
+    pub fn redraw(&mut self) {
+        for pb in self.progress_bars.values() {
+            pb.tick();
         }
     }
 
@@ -164,7 +172,7 @@ impl Output {
     /// Plain progress bar, used to print lines basically
     fn progress_bar_plain_style() -> ProgressStyle {
         ProgressStyle::default_bar()
-            .template("{msg}")
+            .template("{wide_msg}")
             .expect("no default template error")
     }
 

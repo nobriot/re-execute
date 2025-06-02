@@ -3,10 +3,10 @@ use clap::Parser;
 use colored::Colorize;
 use crossbeam_channel::{Receiver, Select, Sender, unbounded};
 //use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
-use key_input::KeyInputMessage;
 use notify::*;
 use std::path::{PathBuf, absolute};
 use std::time::Duration;
+use term_events::TermEvents;
 
 pub mod event;
 use event::Event;
@@ -24,8 +24,8 @@ pub mod command;
 use command::Queue;
 use command::QueueMessage;
 
-pub mod key_input;
 pub mod output;
+pub mod term_events;
 use output::Output;
 
 fn main() {
@@ -67,7 +67,7 @@ fn run() -> Result<()> {
     let tx_clone = event_tx.clone();
     let command_queue_tx = Queue::start(&args, tx_clone);
     // Start listening on keys
-    std::thread::spawn(move || key_input::monitor_key_inputs(event_tx));
+    std::thread::spawn(move || term_events::monitor_key_inputs(event_tx));
 
     // Printout / output
     let mut output = Output::new(&args);
@@ -109,11 +109,14 @@ fn run() -> Result<()> {
                 //_ => {}
             },
             Ok(Event::Exec(update)) => output.update(update),
-            Ok(Event::Key(KeyInputMessage::Quit)) => {
+            Ok(Event::Term(TermEvents::Quit)) => {
                 let _ = command_queue_tx.send(QueueMessage::Abort);
                 output.println("Quitting...");
                 output.finish();
                 return Ok(());
+            }
+            Ok(Event::Term(TermEvents::Resize(..))) => {
+                output.redraw();
             }
             //Ok(Event::Key(_)) => {}
             Err(e) => {
