@@ -30,7 +30,7 @@ pub struct Args {
 Placeholders:
   Use {file} to substitue the updated file in the command
   Use {files} to substitue all updated files in the command
-  By default if no context is present, one command will be run for all executed files"#
+  By default if no placeholder is present, one command will be run for all executed files"#
     )]
     pub command: Vec<String>,
 
@@ -57,16 +57,23 @@ Placeholders:
     //#[arg(long)]
     //pub current_working_dir: TBD,
 
-    //
+    /// Environment variables to set when the command is executed
+    //#[arg(short, long)]
+    //pub env: Vec<String>,
+
+    /// Display the current time when running the command
+    #[arg(short, long)]
+    pub time: bool,
+
     /// Suppress child programs stdout/stderr
     #[arg(short, long)]
     pub quiet: bool,
 
-    /// Search hidden files and directories
+    /// Include hidden files and directories in updated files
     #[arg(long, short = 'H')]
     pub hidden: bool,
 
-    /// Do no respect .gitignore files
+    /// Do no respect .gitignore files.
     #[arg(short = 'I', long)]
     pub no_gitignore: bool,
 
@@ -88,10 +95,6 @@ Placeholders:
     /// or if it is one execution per modified file
     #[clap(skip)]
     pub batch_exec: bool,
-
-    /// Pre-parsed command to use for constructing commands from file-lists
-    #[clap(skip)]
-    pub parsed_command: Vec<CommandChunk>,
 }
 
 impl Args {
@@ -114,9 +117,12 @@ impl Args {
             return Err(ProgramErrors::EmptyCommand);
         }
 
+        // Assemble the command in 1 piece
+        let command = self.command.join(" ");
+
         // Fill up whether we execute once or one time per file
-        self.batch_exec = !self.command.iter().any(|s| s.contains(FILE_SUBSTITUTION));
-        if self.command.iter().any(|s| s.contains(FILES_SUBSTITUTION)) {
+        self.batch_exec = !command.contains(FILE_SUBSTITUTION); // self.command.iter().any(|s| s.contains(FILE_SUBSTITUTION));
+        if command.contains(FILES_SUBSTITUTION) {
             if !self.batch_exec {
                 // If substitutions are used, it's only single files or all files
                 return Err(ProgramErrors::CommandParseError(
@@ -130,10 +136,8 @@ impl Args {
             self.abort_previous = true;
         }
 
-        self.parsed_command = Self::parse_command(&self.command)?;
-        //println!("Received command {:?}", self.command);
-        //println!("parsed command {:?}", self.parsed_command);
-        //panic!();
+        // Just replace the command with a single string
+        self.command = vec![command];
 
         // Fill up the default shell
         self.shell = DEFAULT_SHELL;
