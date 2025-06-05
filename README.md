@@ -1,5 +1,7 @@
 # Execute commands when files are updated
 
+![cargo-deny](https://github.com/nobriot/re-execute/actions/workflows/deny.yml/badge.svg)
+
 Execute commands automatically when files are updated.
 
 ## Installation 
