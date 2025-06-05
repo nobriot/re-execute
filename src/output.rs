@@ -1,9 +1,6 @@
 use crate::{
     args::{Args, FILE_SUBSTITUTION, FILES_SUBSTITUTION},
-    command::{
-        execution_report::ExecMessage,
-        exit_code::{get_exit_code, get_exit_code_string},
-    },
+    command::{execution_report::ExecMessage, exit_code::get_exit_code_string},
 };
 use colored::Colorize;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
