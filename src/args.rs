@@ -54,12 +54,13 @@ Placeholders:
     /// 1. Where re-execute was invoked
     /// 2. The directory where the watch is happening
     /// 3. The directory of the file itself
+    ///
     //#[arg(long)]
     //pub current_working_dir: TBD,
 
-    /// Environment variables to set when the command is executed
+    // Environment variables to set when the command is executed
     //#[arg(short, long)]
-    //pub env: Vec<String>,
+    // pub env: Vec<String>,
 
     /// Display the current time when running the command
     #[arg(short, long)]

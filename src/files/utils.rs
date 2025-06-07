@@ -91,7 +91,7 @@ fn is_file_hidden(filename: &Path) -> bool {
 
     #[cfg(windows)]
     {
-        if let Ok(metadata) = fs::metadata(filename) {
+        if let Ok(metadata) = std::fs::metadata(filename) {
             const FILE_ATTRIBUTE_HIDDEN: u32 = 0x2;
             if metadata.file_attribute() && FILE_ATTRIBUTE_HIDDEN != 0 {
                 return true;
@@ -131,12 +131,15 @@ mod tests {
     fn test_extension_matches_double_extension() {
         let filename =
             PathBuf::from_str("a/path/file.txt.ignored").expect("Could not create PathBuf");
-        assert!(!extension_matches(&filename, &[
-            String::from("txt"),
-            String::from(""),
-            String::from("txt.ignored"),
-            String::from("gnored")
-        ]));
+        assert!(!extension_matches(
+            &filename,
+            &[
+                String::from("txt"),
+                String::from(""),
+                String::from("txt.ignored"),
+                String::from("gnored")
+            ]
+        ));
     }
 
     #[test]

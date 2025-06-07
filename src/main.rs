@@ -24,9 +24,9 @@ pub mod command;
 use command::Queue;
 use command::QueueMessage;
 
-pub mod output;
 pub mod term_events;
-use output::Output;
+pub mod tui;
+use tui::Output;
 
 fn main() {
     // Disable user input directly in the console
@@ -38,7 +38,7 @@ fn main() {
     match result {
         Ok(_) => {}
         Err(e) => {
-            eprintln!("{} {} {:?}", output::PROGRAM_NAME.bold(), "error".red(), e);
+            eprintln!("{}: {} {:?}", tui::PROGRAM_NAME.bold(), "error".red(), e);
             std::process::exit(1);
         }
     }
