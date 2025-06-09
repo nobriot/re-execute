@@ -30,12 +30,6 @@ by the shell, e.g. `&&`:
 rex -f ~/Desktop "sleep 6 && echo {file}"
 ```
 
-### Parameters
-
-* `-q` / `--quiet`: Do not print children's stdout/stderr messages
-
-### Examples
-
 Run plantuml every time a puml file is modified in the current directory: 
 
 ```console
@@ -47,6 +41,20 @@ Build your documentation when a `.md` or `.rst` file is updated in the `docs/` d
 ```console
 rex -f docs/ -e md -e rst make docs
 ```
+
+### Env variables
+
+Pass additional environment variables using the --env with KEY=VALUE formatj
+
+```console
+rex --env FOO=BAR ./assets/file_and_env.sh {file}
+```
+
+### Parameters
+
+* `-q` / `--quiet`: Do not print children's stdout/stderr messages
+* `-t` / `--time`: Print the time of execution of each command
+
 
 ## Related tools
 

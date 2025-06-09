@@ -58,9 +58,10 @@ Placeholders:
     //#[arg(long)]
     //pub current_working_dir: TBD,
 
-    // Environment variables to set when the command is executed
-    //#[arg(short, long)]
-    // pub env: Vec<String>,
+    /// Environment variables to set when the command is executed
+    /// Format is KEY=VALUE
+    #[arg(short = 'E', long)]
+    pub env: Vec<String>,
 
     /// Display the current time when running the command
     #[arg(short, long)]

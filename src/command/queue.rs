@@ -34,8 +34,8 @@ macro_rules! send_msg_unchecked {
 }
 
 pub struct Queue {
-    /// Shell words (with args) use to to spawn the command
-    shell: Vec<String>,
+    /// Prepared command to which we need to add the args / env variables
+    command_base: Command,
     /// Command to execute, to pass to the shell (i.e. sh -c "command to execute with args")
     command: String,
     /// Files that have been updated - pending command execution
@@ -70,14 +70,7 @@ impl Queue {
     ) -> Result<Sender<QueueMessage>, ProgramErrors> {
         let (tx, rx) = crossbeam_channel::unbounded();
 
-        // Parse the command
-        let shell_parts = shell_words::split(args.shell).map_err(|_| {
-            ProgramErrors::CommandParseError(
-                args.shell.to_string(),
-                "Failed to parse shell command".to_string(),
-            )
-        })?;
-
+        // Parse the command and prep it
         if args.command.len() != 1 {
             return Err(ProgramErrors::InternalError(format!(
                 "Args.command should have been reduced to a single element {:?}",
@@ -85,8 +78,32 @@ impl Queue {
             )));
         }
 
+        let shell_parts = shell_words::split(args.shell).map_err(|_| {
+            ProgramErrors::CommandParseError(
+                args.shell.to_string(),
+                "Failed to parse shell command".to_string(),
+            )
+        })?;
+
+        let mut command = Command::new(&shell_parts[0]);
+        for arg in &shell_parts[1..] {
+            command.arg(arg);
+        }
+
+        // Env variables
+        for env_var in &args.env {
+            let mut parts = env_var.splitn(2, "=");
+            let key = parts.next();
+            let value = parts.next();
+
+            if key.is_none() || value.is_none() {
+                return Err(ProgramErrors::InvalidEnvironmentVariable(env_var.to_owned()));
+            }
+            command.env(key.unwrap(), value.unwrap());
+        }
+
         let mut queue = Self {
-            shell: shell_parts,
+            command_base: command,
             command: args.command[0].clone(),
             files: HashSet::new(),
             pipe_command_output: !args.quiet,
@@ -103,6 +120,26 @@ impl Queue {
 
         std::thread::spawn(move || queue.run());
         Ok(tx)
+    }
+
+    fn get_command(&self) -> Command {
+        let mut command = Command::new(self.command_base.get_program());
+        command.args(self.command_base.get_args());
+        self.command_base.get_envs().for_each(|(k, v)| {
+            if v.is_some() {
+                command.env(k, v.unwrap());
+            }
+        });
+
+        if self.pipe_command_output {
+            command.stdout(Stdio::piped());
+            command.stderr(Stdio::piped());
+        } else {
+            command.stdout(Stdio::null());
+            command.stderr(Stdio::null());
+        }
+
+        command
     }
 
     pub fn run(&mut self) {
@@ -184,10 +221,7 @@ impl Queue {
         assert!(!p.is_empty(), "p should not be empty. Files: {:?}, ", self.files);
 
         // Start assembling the command
-        let mut command = Command::new(&self.shell[0]);
-        for arg in &self.shell[1..] {
-            command.arg(arg);
-        }
+        let mut command = self.get_command();
 
         // File the arguments, replace the placeholders
         if self.command.contains(FILE_SUBSTITUTION) {
@@ -199,14 +233,6 @@ impl Queue {
             ));
         } else {
             command.arg(&self.command);
-        }
-
-        if self.pipe_command_output {
-            command.stdout(Stdio::piped());
-            command.stderr(Stdio::piped());
-        } else {
-            command.stdout(Stdio::null());
-            command.stderr(Stdio::null());
         }
 
         let command_number = self.command_count;

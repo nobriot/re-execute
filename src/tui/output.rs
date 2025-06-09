@@ -2,10 +2,11 @@ use crate::{
     args::{Args, FILE_SUBSTITUTION, FILES_SUBSTITUTION},
     command::{execution_report::ExecMessage, exit_code::get_exit_code_string},
 };
+use chrono::Local;
 use colored::Colorize;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use std::collections::HashMap;
 use std::time::Duration;
-use std::{collections::HashMap, time::UNIX_EPOCH};
 
 // static PROGRAM_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub static PROGRAM_NAME: &str = env!("CARGO_PKG_NAME");
@@ -206,15 +207,7 @@ impl Output {
     }
 
     fn get_local_time() -> String {
-        let time = std::time::SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("Cant get time")
-            .as_secs();
-
-        let seconds = time % 60;
-        let minutes = time / 60 % 60;
-        let hours = (time / 3600) % 24;
-
-        format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
+        let now = Local::now();
+        now.format("%H:%M:%S").to_string()
     }
 }

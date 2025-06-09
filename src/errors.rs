@@ -11,6 +11,9 @@ pub enum ProgramErrors {
     #[error("Failed to parse command: {0} - {1}")]
     CommandParseError(String, String),
 
+    #[error("Invalid environment variable: {0}")]
+    InvalidEnvironmentVariable(String),
+
     #[error("Command to execute is empty")]
     EmptyCommand,
 
