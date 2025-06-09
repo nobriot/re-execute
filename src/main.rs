@@ -65,7 +65,7 @@ fn run() -> Result<()> {
 
     // Start the command queue
     let tx_clone = event_tx.clone();
-    let command_queue_tx = Queue::start(&args, tx_clone);
+    let command_queue_tx = Queue::start(&args, tx_clone)?;
     // Start listening on keys
     std::thread::spawn(move || term_events::monitor_key_inputs(event_tx));
 

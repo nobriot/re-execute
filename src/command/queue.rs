@@ -34,10 +34,10 @@ macro_rules! send_msg_unchecked {
 }
 
 pub struct Queue {
-    /// Shell to use to to spawn the command
-    shell: &'static str,
-    /// Command to execute, with arguments
-    command: Vec<String>,
+    /// Shell words (with args) use to to spawn the command
+    shell: Vec<String>,
+    /// Command to execute, to pass to the shell (i.e. sh -c "command to execute with args")
+    command: String,
     /// Files that have been updated - pending command execution
     /// First pathbuf is the file, second is the watched file/dir
     files: HashSet<(PathBuf, PathBuf)>,
@@ -64,11 +64,30 @@ pub struct Queue {
 }
 
 impl Queue {
-    pub fn start(args: &Args, report_tx: Sender<Event>) -> Sender<QueueMessage> {
+    pub fn start(
+        args: &Args,
+        report_tx: Sender<Event>,
+    ) -> Result<Sender<QueueMessage>, ProgramErrors> {
         let (tx, rx) = crossbeam_channel::unbounded();
+
+        // Parse the command
+        let shell_parts = shell_words::split(args.shell).map_err(|_| {
+            ProgramErrors::CommandParseError(
+                args.shell.to_string(),
+                "Failed to parse shell command".to_string(),
+            )
+        })?;
+
+        if args.command.len() != 1 {
+            return Err(ProgramErrors::InternalError(format!(
+                "Args.command should have been reduced to a single element {:?}",
+                args.command
+            )));
+        }
+
         let mut queue = Self {
-            shell: args.shell,
-            command: args.command.clone(),
+            shell: shell_parts,
+            command: args.command[0].clone(),
             files: HashSet::new(),
             pipe_command_output: !args.quiet,
             batch_exec: args.batch_exec,
@@ -83,7 +102,7 @@ impl Queue {
         };
 
         std::thread::spawn(move || queue.run());
-        tx
+        Ok(tx)
     }
 
     pub fn run(&mut self) {
@@ -131,7 +150,9 @@ impl Queue {
     /// command
     pub fn execute(&mut self) -> Result<(), ProgramErrors> {
         if self.files.is_empty() {
-            return Err(ProgramErrors::BadInternalState);
+            return Err(ProgramErrors::InternalError(
+                "Trying to execute commands with an empty queue".into(),
+            ));
         }
 
         // Remove deleted files unless we want them
@@ -162,35 +183,24 @@ impl Queue {
         };
         assert!(!p.is_empty(), "p should not be empty. Files: {:?}, ", self.files);
 
-        // Parse the command
-        let shell_parts = shell_words::split(self.shell).map_err(|_| {
-            ProgramErrors::CommandParseError(
-                self.shell.to_string(),
-                "Failed to parse shell command".to_string(),
-            )
-        })?;
-
-        let mut command = Command::new(&shell_parts[0]);
-        for arg in &shell_parts[1..] {
+        // Start assembling the command
+        let mut command = Command::new(&self.shell[0]);
+        for arg in &self.shell[1..] {
             command.arg(arg);
         }
 
         // File the arguments, replace the placeholders
-        for arg in &self.command {
-            match arg {
-                //FIXME: do this job once in args and just keep a pre-parsed vector with gaps for the placeholders
-                a if a == FILE_SUBSTITUTION => command.arg(p[0].clone()),
-                a if a == FILES_SUBSTITUTION => command.args(p.clone()),
-                a if a.contains(FILE_SUBSTITUTION) => {
-                    command.arg(a.replace(FILE_SUBSTITUTION, p[0].to_string_lossy().as_ref()))
-                }
-                a if a.contains(FILES_SUBSTITUTION) => command.arg(a.replace(
-                    FILES_SUBSTITUTION,
-                    p.iter().map(|pb| pb.to_string_lossy()).collect::<Vec<_>>().join(" ").as_str(),
-                )),
-                a => command.args([a]),
-            };
+        if self.command.contains(FILE_SUBSTITUTION) {
+            command.arg(self.command.replace(FILE_SUBSTITUTION, p[0].to_string_lossy().as_ref()));
+        } else if self.command.contains(FILES_SUBSTITUTION) {
+            command.arg(self.command.replace(
+                FILES_SUBSTITUTION,
+                p.iter().map(|pb| pb.to_string_lossy()).collect::<Vec<_>>().join(" ").as_str(),
+            ));
+        } else {
+            command.arg(&self.command);
         }
+
         if self.pipe_command_output {
             command.stdout(Stdio::piped());
             command.stderr(Stdio::piped());
@@ -199,7 +209,6 @@ impl Queue {
             command.stderr(Stdio::null());
         }
 
-        //dbg!(&command);
         let command_number = self.command_count;
         self.command_count += 1;
         self.report_tx

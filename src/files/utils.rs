@@ -59,6 +59,7 @@ pub fn extension_matches(filename: &Path, allowed_extensions: &[String]) -> bool
 }
 
 /// Checks if the file or any parent directory is hidden
+/// up to the watch directory level.
 pub fn is_hidden(filename: &Path, watch: &PathBuf) -> bool {
     let mut path = filename.to_path_buf();
 
@@ -93,7 +94,7 @@ fn is_file_hidden(filename: &Path) -> bool {
     {
         if let Ok(metadata) = std::fs::metadata(filename) {
             const FILE_ATTRIBUTE_HIDDEN: u32 = 0x2;
-            if metadata.file_attribute() && FILE_ATTRIBUTE_HIDDEN != 0 {
+            if metadata.file_attributes() && FILE_ATTRIBUTE_HIDDEN != 0 {
                 return true;
             }
         }

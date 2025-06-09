@@ -17,10 +17,10 @@ pub enum ProgramErrors {
     #[error("Failed to execute command: {0}")]
     CommandExecutionError(String),
 
-    #[error("Internal Error: Trying to execute commands with an empty queue.")]
-    BadInternalState,
-
     #[error("Internal Error: {0}")]
+    InternalError(String),
+
+    #[error("Channel Error: {0}")]
     ChannelReceiveError(String),
 }
 
