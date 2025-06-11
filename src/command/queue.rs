@@ -126,8 +126,8 @@ impl Queue {
         let mut command = Command::new(self.command_base.get_program());
         command.args(self.command_base.get_args());
         self.command_base.get_envs().for_each(|(k, v)| {
-            if v.is_some() {
-                command.env(k, v.unwrap());
+            if let Some(value) = v {
+                command.env(k, value);
             }
         });
 

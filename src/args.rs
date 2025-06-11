@@ -10,7 +10,7 @@ pub static FILES_SUBSTITUTION: &str = "{files}";
 pub const DEFAULT_SHELL: &str = "sh -c";
 
 #[cfg(windows)]
-pub const DEFAULT_SHELL: &str = "cmd.exe";
+pub const DEFAULT_SHELL: &str = "cmd.exe /c";
 
 #[derive(Parser, Debug)]
 #[command(name = env!("CARGO_PKG_NAME"), max_term_width = 80)]
@@ -28,8 +28,8 @@ pub struct Args {
         help = "Command/program to run",
         long_help = r#"Command/program to run
 Placeholders:
-  Use {file} to substitue the updated file in the command
-  Use {files} to substitue all updated files in the command
+  Use {file} to substitute the updated file in the command
+  Use {files} to substitute all updated files in the command
   By default if no placeholder is present, one command will be run for all executed files"#
     )]
     pub command: Vec<String>,
@@ -42,7 +42,7 @@ Placeholders:
     #[arg(long, default_value_t = 200)]
     pub poll_interval: u64,
 
-    //// Regex to match files against
+    /// Regex to match files against
     // TODO: Implement me
     // #[arg(short, long)]
     // pub regex: Vec<String>,
@@ -54,6 +54,7 @@ Placeholders:
     /// 1. Where re-execute was invoked
     /// 2. The directory where the watch is happening
     /// 3. The directory of the file itself
+    //
     ///
     //#[arg(long)]
     //pub current_working_dir: TBD,

@@ -95,7 +95,7 @@ fn is_file_hidden(filename: &Path) -> bool {
         use std::os::windows::fs::MetadataExt;
         if let Ok(metadata) = std::fs::metadata(filename) {
             const FILE_ATTRIBUTE_HIDDEN: u32 = 0x2;
-            if metadata.file_attributes() && FILE_ATTRIBUTE_HIDDEN != 0 {
+            if metadata.file_attributes() & FILE_ATTRIBUTE_HIDDEN != 0 {
                 return true;
             }
         }

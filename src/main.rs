@@ -49,12 +49,11 @@ fn run() -> Result<()> {
     args.validate()?;
     let args = args;
 
-    // Stores tuples (watcher, rx, top-level file)
     let mut file_watchers: Vec<Box<dyn Watcher>> = Vec::new();
     let mut rx_with_path: Vec<(Receiver<Event>, PathBuf)> = Vec::new();
 
     for f in &args.files {
-        let (tx, rx) = unbounded::<Event>(); //std::sync::mpsc::channel();
+        let (tx, rx) = unbounded::<Event>();
         let mut watcher = get_watcher(tx, &args);
         let p = register_watch_for_file(&mut watcher, f)?;
         file_watchers.push(watcher);
