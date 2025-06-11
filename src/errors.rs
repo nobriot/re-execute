@@ -14,6 +14,9 @@ pub enum ProgramErrors {
     #[error("Invalid environment variable: {0}")]
     InvalidEnvironmentVariable(String),
 
+    #[error("Invalid current working directory: {0}")]
+    InvalidCurrentWorkingDirectory(String),
+
     #[error("Command to execute is empty")]
     EmptyCommand,
 

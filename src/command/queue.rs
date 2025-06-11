@@ -43,6 +43,8 @@ pub struct Queue {
     files: HashSet<(PathBuf, PathBuf)>,
     /// Do we keep the command outputs
     pipe_command_output: bool,
+    /// Do we configure a particular working dir for commands
+    working_dir: Option<String>,
     /// Execution mode
     batch_exec: bool,
     /// Execute commands also if files are deleted
@@ -107,6 +109,7 @@ impl Queue {
             command: args.command[0].clone(),
             files: HashSet::new(),
             pipe_command_output: !args.quiet,
+            working_dir: args.current_working_dir.clone(),
             batch_exec: args.batch_exec,
             deleted_files: args.deleted,
             rx,
@@ -223,6 +226,10 @@ impl Queue {
         // Start assembling the command
         let mut command = self.get_command();
 
+        if let Some(cwd) = &self.working_dir {
+            command.current_dir(cwd);
+        }
+
         // File the arguments, replace the placeholders
         if self.command.contains(FILE_SUBSTITUTION) {
             command.arg(self.command.replace(FILE_SUBSTITUTION, p[0].to_string_lossy().as_ref()));
@@ -235,6 +242,7 @@ impl Queue {
             command.arg(&self.command);
         }
 
+        // Queue house keeping.
         let command_number = self.command_count;
         self.command_count += 1;
         self.report_tx

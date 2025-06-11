@@ -46,18 +46,12 @@ Placeholders:
     // TODO: Implement me
     // #[arg(short, long)]
     // pub regex: Vec<String>,
-    //
-    //
-    /// Current Working Directory for the
-    /// command being executed. Choices
-    /// are from
-    /// 1. Where re-execute was invoked
-    /// 2. The directory where the watch is happening
-    /// 3. The directory of the file itself
-    //
-    ///
-    //#[arg(long)]
-    //pub current_working_dir: TBD,
+
+    /// Current Working Directory for the command being executed.
+    /// By default, it will be the same from the rex command.
+    /// Else it can be specified here.
+    #[arg(long = "cwd")]
+    pub current_working_dir: Option<String>,
 
     /// Environment variables to set when the command is executed
     /// Format is KEY=VALUE
@@ -123,6 +117,13 @@ impl Args {
         // Assemble the command in 1 piece
         let command = self.command.join(" ");
 
+        if let Some(path) = &self.current_working_dir {
+            let p = std::path::Path::new(path);
+            if !p.exists() {
+                return Err(ProgramErrors::InvalidCurrentWorkingDirectory(path.clone()));
+            }
+        }
+
         // Fill up whether we execute once or one time per file
         self.batch_exec = !command.contains(FILE_SUBSTITUTION); // self.command.iter().any(|s| s.contains(FILE_SUBSTITUTION));
         if command.contains(FILES_SUBSTITUTION) {
@@ -148,78 +149,4 @@ impl Args {
         //dbg!(&self);
         Ok(())
     }
-
-    // /// Pre-parses the bits of the commands to assemble.
-    // /// e.g.
-    // /// input ["sleep", "10", "echo", "{file} was modified"]
-    // /// returns [Literal(0, 0, 5), Space, Literal(1, 0, 2), Literal(2, 0, 4), Space, FilesPlaceholder, Literal(3, 6, 19), Space]
-    // fn parse_command(command: &Vec<String>) -> Result<Vec<CommandChunk>, ProgramErrors> {
-    //     let mut parsed = Vec::new();
-
-    //     for (i, words) in command.iter().enumerate() {
-    //         if words == FILE_SUBSTITUTION {
-    //             parsed.push(CommandChunk::FilePlaceholder);
-    //         } else if words == FILES_SUBSTITUTION {
-    //             parsed.push(CommandChunk::FilesPlaceholder);
-    //         } else if words.contains(FILE_SUBSTITUTION) {
-    //             let mut s = 0;
-    //             let e = words.len();
-    //             let mut search: &str = &words[s..e];
-    //             while let Some(index) = search.find(FILE_SUBSTITUTION) {
-    //                 if index > i {
-    //                     parsed.push(CommandChunk::Literal(i, s, index));
-    //                 }
-    //                 parsed.push(CommandChunk::FilesPlaceholder);
-
-    //                 if index + FILE_SUBSTITUTION.len() < e {
-    //                     s = index + FILE_SUBSTITUTION.len();
-    //                     search = &words[s..];
-    //                 }
-    //             }
-    //             parsed.push(CommandChunk::Literal(i, s, e));
-    //         } else if words.contains(FILES_SUBSTITUTION) {
-    //             let mut s = 0;
-    //             let e = words.len();
-    //             let mut search: &str = &words[s..e];
-    //             while let Some(index) = search.find(FILES_SUBSTITUTION) {
-    //                 if index > i {
-    //                     parsed.push(CommandChunk::Literal(i, s, index));
-    //                 }
-    //                 parsed.push(CommandChunk::FilesPlaceholder);
-
-    //                 if index + FILES_SUBSTITUTION.len() < e {
-    //                     s = index + FILES_SUBSTITUTION.len();
-    //                     search = &words[s..];
-    //                 }
-    //             }
-    //             parsed.push(CommandChunk::Literal(i, s, e));
-    //         } else {
-    //             parsed.push(CommandChunk::Literal(i, 0, words.len()));
-    //         }
-
-    //         // Join the String from the Vec with spaces
-    //         if i != words.len() - 1 {
-    //             parsed.push(CommandChunk::Space);
-    //         }
-    //     }
-
-    //     return Ok(parsed);
-    // }
 }
-
-// /// Parts of the commands - parsed
-// /// from the initial command received
-// #[derive(Debug)]
-// enum CommandChunk {
-//     /// This is just a reference to a part of the String
-//     /// contained in the command.
-//     /// First usize is index of the Vec<String> inside the vec
-//     /// Second/Third usize are start/end indices of the String[s..]
-//     Literal(usize, usize, usize),
-//     /// This is a space (used to join argments from the String)
-//     Space,
-//     /// This is the '{files}' literal
-//     FilesPlaceholder,
-//     /// This is the '{file}' literal
-//     FilePlaceholder,
-// }
