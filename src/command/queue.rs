@@ -22,7 +22,7 @@ use crate::command::execution_report::{ExecCode, ExecMessage, ExecStart};
 use crate::command::exit_code;
 
 use crate::args::{Args, FILE_SUBSTITUTION, FILES_SUBSTITUTION};
-use crate::errors::ProgramErrors;
+use crate::errors::{ArgumentError, ProgramError, RuntimeError, arg_error, runtime_error};
 use crate::event::Event;
 
 use super::exit_code::ExitCode;
@@ -69,21 +69,25 @@ impl Queue {
     pub fn start(
         args: &Args,
         report_tx: Sender<Event>,
-    ) -> Result<Sender<QueueMessage>, ProgramErrors> {
+    ) -> Result<Sender<QueueMessage>, ProgramError> {
         let (tx, rx) = crossbeam_channel::unbounded();
 
         // Parse the command and prep it
         if args.command.len() != 1 {
-            return Err(ProgramErrors::InternalError(format!(
-                "Args.command should have been reduced to a single element {:?}",
-                args.command
-            )));
+            return Err(runtime_error!(
+                InternalError,
+                format!(
+                    "Args.command should have been reduced to a single element {:?}",
+                    args.command
+                )
+            ));
         }
 
         let shell_parts = shell_words::split(args.shell).map_err(|_| {
-            ProgramErrors::CommandParseError(
+            arg_error!(
+                CommandParseError,
                 args.shell.to_string(),
-                "Failed to parse shell command".to_string(),
+                "Failed to parse shell command".to_string()
             )
         })?;
 
@@ -99,7 +103,7 @@ impl Queue {
             let value = parts.next();
 
             if key.is_none() || value.is_none() {
-                return Err(ProgramErrors::InvalidEnvironmentVariable(env_var.to_owned()));
+                return Err(arg_error!(InvalidEnvironmentVariable, env_var.to_owned()));
             }
             command.env(key.unwrap(), value.unwrap());
         }
@@ -188,10 +192,11 @@ impl Queue {
 
     /// Picks up the next file-batch and spawn a thread executing the
     /// command
-    pub fn execute(&mut self) -> Result<(), ProgramErrors> {
+    pub fn execute(&mut self) -> Result<(), ProgramError> {
         if self.files.is_empty() {
-            return Err(ProgramErrors::InternalError(
-                "Trying to execute commands with an empty queue".into(),
+            return Err(runtime_error!(
+                InternalError,
+                "Trying to execute commands with an empty queue".into()
             ));
         }
 
@@ -253,7 +258,7 @@ impl Queue {
                     .map(|pb| pb.file_name().unwrap().to_string_lossy().into_owned())
                     .collect(),
             })))
-            .map_err(|e| ProgramErrors::CommandExecutionError(e.to_string()))?;
+            .map_err(|e| runtime_error!(CommandExecutionError, e.to_string()))?;
 
         let tx_clone = self.report_tx.clone();
         let abort = self.abort.clone();

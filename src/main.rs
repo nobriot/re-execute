@@ -15,7 +15,7 @@ pub mod args;
 use args::Args;
 
 pub mod errors;
-use errors::ProgramErrors;
+use errors::{ProgramError, RuntimeError, runtime_error};
 
 pub mod files;
 use files::utils::should_be_ignored;
@@ -104,7 +104,7 @@ fn run() -> Result<()> {
                     }
                     _ => {}
                 },
-                Err(error) => return Err(ProgramErrors::FileWatchError(error.to_string()).into()),
+                Err(error) => return Err(runtime_error!(FileWatchError, error.to_string()).into()),
                 //_ => {}
             },
             Ok(Event::Exec(update)) => output.update(update),
@@ -119,7 +119,7 @@ fn run() -> Result<()> {
             }
             //Ok(Event::Key(_)) => {}
             Err(e) => {
-                return Err(ProgramErrors::ChannelReceiveError(e.to_string()).into());
+                return Err(runtime_error!(ChannelReceiveError, e.to_string()).into());
             }
         }
     }
@@ -130,11 +130,11 @@ fn run() -> Result<()> {
 fn register_watch_for_file(
     watcher: &mut Box<dyn Watcher>,
     file: &str,
-) -> Result<PathBuf, ProgramErrors> {
+) -> Result<PathBuf, ProgramError> {
     let p = absolute(file)
-        .map_err(|e| ProgramErrors::FileError(file.to_string(), e.to_string()))?
+        .map_err(|e| runtime_error!(FileError, file.to_string(), e.to_string()))?
         .canonicalize()
-        .map_err(|e| ProgramErrors::FileError(file.to_string(), e.to_string()))?;
+        .map_err(|e| runtime_error!(FileError, file.to_string(), e.to_string()))?;
 
     let watch_mode =
         if p.is_dir() { RecursiveMode::Recursive } else { RecursiveMode::NonRecursive };

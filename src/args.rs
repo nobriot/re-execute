@@ -1,4 +1,4 @@
-use crate::errors::ProgramErrors;
+use crate::errors::{ArgumentError, ProgramError, arg_error};
 use clap::Parser;
 
 /// Use this placeholder to substitute individual updated files in the command
@@ -43,9 +43,8 @@ Placeholders:
     pub poll_interval: u64,
 
     /// Regex to match files against
-    // TODO: Implement me
-    // #[arg(short, long)]
-    // pub regex: Vec<String>,
+    #[arg(short, long)]
+    pub regex: Vec<String>,
 
     /// Current Working Directory for the command being executed.
     /// By default, it will be the same from the rex command.
@@ -53,7 +52,7 @@ Placeholders:
     #[arg(long = "cwd")]
     pub current_working_dir: Option<String>,
 
-    /// Environment variables to set when the command is executed
+    /// Environment variables to set when the command is executed.
     /// Format is KEY=VALUE
     #[arg(short = 'E', long)]
     pub env: Vec<String>,
@@ -95,7 +94,11 @@ Placeholders:
 }
 
 impl Args {
-    pub fn validate(&mut self) -> Result<(), ProgramErrors> {
+    pub fn validate(&mut self) -> Result<(), ProgramError> {
+        if !self.regex.is_empty() {
+            todo!("regex arg not implemented yet");
+        }
+
         // Remove all trailings dots if the user has given extensions with
         // `.txt` instead of `txt`
         // Also convert all extensions to lowercase to compare
@@ -111,7 +114,7 @@ impl Args {
 
         // Ensure we have a command to execute
         if self.command.is_empty() {
-            return Err(ProgramErrors::EmptyCommand);
+            return Err(arg_error!(EmptyCommand));
         }
 
         // Assemble the command in 1 piece
@@ -120,20 +123,21 @@ impl Args {
         if let Some(path) = &self.current_working_dir {
             let p = std::path::Path::new(path);
             if !p.exists() {
-                return Err(ProgramErrors::InvalidCurrentWorkingDirectory(path.clone()));
+                return Err(arg_error!(InvalidCurrentWorkingDirectory, path.clone()));
             }
         }
 
         // Fill up whether we execute once or one time per file
-        self.batch_exec = !command.contains(FILE_SUBSTITUTION); // self.command.iter().any(|s| s.contains(FILE_SUBSTITUTION));
+        self.batch_exec = !command.contains(FILE_SUBSTITUTION);
         if command.contains(FILES_SUBSTITUTION) {
             if !self.batch_exec {
                 // If substitutions are used, it's only single files or all files
-                return Err(ProgramErrors::CommandParseError(
+                return Err(arg_error!(
+                    CommandParseError,
                     self.command.join(" "),
                     format!(
                         "Command cannot contain both {FILE_SUBSTITUTION} and {FILES_SUBSTITUTION}"
-                    ),
+                    )
                 ));
             }
         } else if self.batch_exec {
