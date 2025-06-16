@@ -15,28 +15,22 @@ cd re-execute/
 cargo install --path .
 ```
 
-The command is shortened to `rex`.
+The command is shortened to `rex`
 
 ## Usage
 
-### Possible Use Cases
+You can get started reading the help page: `rex -h`
 
-Not exactly sure what you would use it for, but here are a few ideas
-`re-execute` can be used for a variety of automation tasks, including but not limited to:
+By default, any file hidden or gitignored under the directories being watched
+will not trigger any command execution.
 
-- **Automatic Testing**: Run unit or integration tests whenever source files are changed, speeding up the development cycle.
-- **Continuous Compilation**: Recompile your project when code files are updated
-- **Asset Processing**: Convert, optimize, or move assets (images, videos, etc.) when they are modified in a directory.
-- **Code Linting/Formatting**: Lint or format code every time a file is saved to ensure consistency.
-- **Scripted Deployments**: Automatically deploy or sync files to servers or cloud storage on file changes.
-- **Static Site Generation**: Regenerate static websites when source content changes.
-- **Diagram/Visualization Generation**: Run tools like PlantUML on diagrams whenever `.puml` files are edited.
-- **Custom Notification**: Send notifications (email, desktop, etc.) when files of interest are updated.
-- **Trigger Any Custom Command**: Use any CLI tool or script in response to file changes.
+```console
+rex [OPTIONS] [COMMAND]...
+```
 
 ### Examples
 
-Just annouce updated files in the config folder:
+Just annouce updated files in your config folder:
 
 ```console
 rex -f $HOME/.config echo "updated files: {files}"
@@ -70,7 +64,7 @@ Else just press Ctrl+C.
 
 ### Env variables
 
-Pass additional environment variables using the --env with KEY=VALUE formatj
+Pass additional environment variables using the --env with KEY=VALUE format
 
 ```console
 rex --env FOO=BAR ./assets/file_and_env.sh {file}
@@ -78,15 +72,22 @@ rex --env FOO=BAR ./assets/file_and_env.sh {file}
 
 ### Parameters
 
-* `-q` / `--quiet`: Do not print children's stdout/stderr messages
-* `-t` / `--time`: Print the time of execution of each command
+A non-exhaustive list of parameters for the program:
 
+* `-q` / `--quiet`:   Do not print children's stdout/stderr messages
+* `-E` / `--env`:   Set an env variable for the command, e.g. `--env FOO=bar`
+* `-t` / `--time`:    Print the time of execution of each command
+* `-H` / `--hidden`: Include hidden files in the triggers
+* `-d` / `--deleted`: Call the commands also with files that have been deleted
+* `-a` / `--abort-previous`: Abort previous ongoing command execution when files are updated while the program is running
 
 ## Related tools
 
-[When-changed](https://github.com/joh/when-changed)
-[entr](https://github.com/eradman/entr)
-[watchexec](https://github.com/watchexec/watchexec)
-[fswatch](https://github.com/emcrisostomo/fswatch)
-[chokidar](https://github.com/open-cli-tools/chokidar-cli)
-[checkexec](https://github.com/kurtbuilds/checkexec)
+If you'd like the more professional tools, look here:
+
+* [watchexec](https://github.com/watchexec/watchexec)
+* [fswatch](https://github.com/emcrisostomo/fswatch)
+* [entr](https://github.com/eradman/entr)
+* [chokidar](https://github.com/open-cli-tools/chokidar-cli)
+* [checkexec](https://github.com/kurtbuilds/checkexec)
+* [When-changed](https://github.com/joh/when-changed)
