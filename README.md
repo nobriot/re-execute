@@ -55,6 +55,8 @@ Build your documentation when a `.md` or `.rst` file is updated in the `docs/` d
 rex -f docs/ -e md -e rst make docs
 ```
 
+Using `-e md,rst` is also valid. Use `-e ""` to allow files without extensions.
+
 ## Exiting
 
 Once the program start, it's like [VIM](https://www.vim.org/), you never exit it 😉.
@@ -75,6 +77,7 @@ rex --env FOO=BAR ./assets/file_and_env.sh {file}
 A non-exhaustive list of parameters for the program:
 
 * `-q` / `--quiet`:   Do not print children's stdout/stderr messages
+* `-e` / `--extension`:  Specify extensions to allow. Will ignore other extensions. e.g. `-e md -e ""` for .md and extension-less files
 * `-E` / `--env`:   Set an env variable for the command, e.g. `--env FOO=bar`
 * `-t` / `--time`:    Print the time of execution of each command
 * `-H` / `--hidden`: Include hidden files in the triggers
@@ -83,6 +86,7 @@ A non-exhaustive list of parameters for the program:
 
 ## Related tools
 
+This is just a small program I made for my own fun. 
 If you'd like the more professional tools, look here:
 
 * [watchexec](https://github.com/watchexec/watchexec)

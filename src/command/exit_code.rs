@@ -17,7 +17,7 @@ pub fn get_exit_code(status: ExitStatus) -> ExitCode {
 pub fn get_exit_code_string(exit_code: ExitCode) -> String {
     if let Some(c) = exit_code {
         match c {
-            0 => format!("{:<3}", "0".green()),
+            0 => format!("{:<3}", "✔️".green()),
             130 => format!("{:<3}", "130".yellow()),
             c => format!("{:<3}", c).red().to_string(),
         }

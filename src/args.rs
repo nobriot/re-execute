@@ -102,10 +102,16 @@ impl Args {
         // Remove all trailings dots if the user has given extensions with
         // `.txt` instead of `txt`
         // Also convert all extensions to lowercase to compare
+        let mut parsed_extensions = Vec::new();
         self.extensions.iter_mut().for_each(|s| {
-            *s = s.to_lowercase();
-            *s = s.strip_prefix(".").unwrap_or(s).to_string();
+            for ext_part in s.splitn(2, ",") {
+                let ext = ext_part.to_lowercase();
+                let ext = ext.strip_prefix(".").unwrap_or(&ext).to_string();
+                parsed_extensions.push(ext);
+            }
         });
+
+        self.extensions = parsed_extensions;
 
         // If no files are passed, we watch the current directory for changes
         if self.files.is_empty() {

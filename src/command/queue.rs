@@ -96,16 +96,16 @@ impl Queue {
             command.arg(arg);
         }
 
-        // Env variables
+        // Env variables.
         for env_var in &args.env {
             let mut parts = env_var.splitn(2, "=");
             let key = parts.next();
-            let value = parts.next();
+            let value = parts.next().unwrap_or(""); // Default env variable value will be ""
 
-            if key.is_none() || value.is_none() {
+            if key.is_none() {
                 return Err(arg_error!(InvalidEnvironmentVariable, env_var.to_owned()));
             }
-            command.env(key.unwrap(), value.unwrap());
+            command.env(key.unwrap(), value);
         }
 
         let mut queue = Self {

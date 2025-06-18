@@ -91,7 +91,7 @@ fn run() -> Result<()> {
         match operation.recv(rx) {
             Ok(Event::FileWatch(file_watch)) => match file_watch {
                 Ok(event) => match event.kind {
-                    EventKind::Modify(_) | EventKind::Remove(_) => {
+                    EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_) => {
                         let (_, watch) = &rx_with_path[index];
                         for p in &event.paths {
                             if should_be_ignored(p, &args, watch) {
