@@ -1,5 +1,6 @@
 use crate::errors::{ArgumentError, ProgramError, arg_error};
 use clap::Parser;
+use regex::Regex;
 
 /// Use this placeholder to substitute individual updated files in the command
 pub static FILE_SUBSTITUTION: &str = "{file}";
@@ -43,6 +44,7 @@ Placeholders:
     pub poll_interval: u64,
 
     /// Regex to match files against
+    /// See regex docs here: https://docs.rs/regex/latest/regex/#syntax
     #[arg(short, long)]
     pub regex: Vec<String>,
 
@@ -91,14 +93,22 @@ Placeholders:
     /// or if it is one execution per modified file
     #[clap(skip)]
     pub batch_exec: bool,
+
+    /// Compiled Regexps
+    #[clap(skip)]
+    pub regexps: Vec<Regex>,
 }
 
 impl Args {
     pub fn validate(&mut self) -> Result<(), ProgramError> {
-        if !self.regex.is_empty() {
-            todo!("regex arg not implemented yet");
+        // Validate regexps
+        for r in &self.regex {
+            let regex_res = Regex::new(r);
+            match regex_res {
+                Ok(regex) => self.regexps.push(regex),
+                Err(e) => return Err(arg_error!(InvalidRegex, r.clone(), e.to_string())),
+            }
         }
-
         // Remove all trailings dots if the user has given extensions with
         // `.txt` instead of `txt`
         // Also convert all extensions to lowercase to compare
@@ -147,6 +157,7 @@ impl Args {
                 ));
             }
         } else if self.batch_exec {
+            self.deleted = true;
             self.abort_previous = true;
         }
 

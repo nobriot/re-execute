@@ -1,6 +1,6 @@
 [package]
 name = "re-execute"
-version = "0.4.0"
+version = "0.4.1"
 edition = "2021"
 
 authors = ["Nicolas Woltmann"]
@@ -27,6 +27,7 @@ indicatif = "0.17.11"
 crossterm = "0.29.0"
 crossbeam-channel = "0.5.15"
 chrono = "0.4.41"
+regex = "1.11.1"
 
 [profile.release]
 lto = true

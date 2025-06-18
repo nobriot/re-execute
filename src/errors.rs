@@ -63,6 +63,9 @@ pub enum ArgumentError {
     #[error("Invalid current working directory: {0}")]
     InvalidCurrentWorkingDirectory(String),
 
+    #[error("Invalid regular expression: {0} {1}")]
+    InvalidRegex(String, String),
+
     #[error("Command to execute is empty")]
     EmptyCommand,
 }

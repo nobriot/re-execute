@@ -1,6 +1,7 @@
 use crate::Args;
 use crate::files::git::is_git_ignored;
 
+use regex::Regex;
 use std::path::{Path, PathBuf};
 
 macro_rules! is_some_or_return {
@@ -26,6 +27,9 @@ pub fn should_be_ignored(filename: &PathBuf, args: &Args, watch: &PathBuf) -> bo
         return true;
     }
     if !args.deleted && !filename.exists() {
+        return true;
+    }
+    if !has_regex_match(&args.regexps, filename, watch) {
         return true;
     }
     if !args.no_gitignore && is_git_ignored(filename, watch) {
@@ -79,6 +83,27 @@ pub fn is_hidden(filename: &Path, watch: &PathBuf) -> bool {
     false
 }
 
+/// Checks if the file or any parent directory is hidden
+/// up to the watch directory level.
+pub fn has_regex_match(regex: &[Regex], filename: &Path, watch: &PathBuf) -> bool {
+    // No regex given, we accept all files
+    if regex.is_empty() {
+        return true;
+    }
+
+    // first stop, we actually clip the part of the filename
+    let path = relative_path_within_dir(filename, watch).expect("filename inside watch dir");
+    let path = path.to_string_lossy();
+
+    // Now check that all the regexes are matching
+    for r in regex {
+        if !r.is_match(&path) {
+            return false;
+        }
+    }
+
+    true
+}
 // ------------------------------------------------------------------------------------------------
 // private
 
@@ -102,6 +127,20 @@ fn is_file_hidden(filename: &Path) -> bool {
     }
 
     false
+}
+
+fn relative_path_within_dir<P, Q>(filename: P, dir: Q) -> Result<PathBuf, ()>
+where
+    P: AsRef<Path>,
+    Q: AsRef<Path>,
+{
+    let filename = std::fs::canonicalize(filename).map_err(|_| ())?;
+    let dir = std::fs::canonicalize(dir).map_err(|_| ())?;
+
+    match filename.strip_prefix(dir) {
+        Ok(rel) => Ok(rel.to_path_buf()),
+        Err(_) => Err(()),
+    }
 }
 
 #[cfg(test)]

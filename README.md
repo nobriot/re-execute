@@ -79,6 +79,7 @@ A non-exhaustive list of parameters for the program:
 * `-q` / `--quiet`:   Do not print children's stdout/stderr messages
 * `-e` / `--extension`:  Specify extensions to allow. Will ignore other extensions. e.g. `-e md -e ""` for .md and extension-less files
 * `-E` / `--env`:   Set an env variable for the command, e.g. `--env FOO=bar`
+* `-r` / `--regex`:   Add a regex to match filenames with. e.g. `-r '^[a-z0-9A-Z]*$'` will only match filenames with alphanumerical characters. Note that if a file watch in in `a/path` and the updated file ia `a/path/a/file`, then the second part will be evaluated against the regex, i.e. `a/file`
 * `-t` / `--time`:    Print the time of execution of each command
 * `-H` / `--hidden`: Include hidden files in the triggers
 * `-d` / `--deleted`: Call the commands also with files that have been deleted
