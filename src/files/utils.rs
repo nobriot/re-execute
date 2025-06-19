@@ -92,8 +92,7 @@ pub fn has_regex_match(regex: &[Regex], filename: &Path, watch: &PathBuf) -> boo
     }
 
     // first stop, we actually clip the part of the filename
-    let path = relative_path_within_dir(filename, watch).expect("filename inside watch dir");
-    let path = path.to_string_lossy();
+    let path = relative_path_within_dir(filename, watch);
 
     // Now check that all the regexes are matching
     for r in regex {
@@ -129,17 +128,23 @@ fn is_file_hidden(filename: &Path) -> bool {
     false
 }
 
-fn relative_path_within_dir<P, Q>(filename: P, dir: Q) -> Result<PathBuf, ()>
+fn relative_path_within_dir<P, Q>(filename: P, dir: Q) -> String
 where
     P: AsRef<Path>,
     Q: AsRef<Path>,
 {
-    let filename = std::fs::canonicalize(filename).map_err(|_| ())?;
-    let dir = std::fs::canonicalize(dir).map_err(|_| ())?;
+    let filename = &filename.as_ref().to_string_lossy();
+    let dir = &dir.as_ref().to_string_lossy();
 
-    match filename.strip_prefix(dir) {
-        Ok(rel) => Ok(rel.to_path_buf()),
-        Err(_) => Err(()),
+    match filename.strip_prefix(dir.as_ref()) {
+        Some(rel) => {
+            let mut idx = 0;
+            while idx < rel.len() && rel[idx..].starts_with("/") {
+                idx += 1;
+            }
+            rel[idx..].to_owned()
+        }
+        None => filename.clone().into_owned(),
     }
 }
 
@@ -223,5 +228,17 @@ mod tests {
             PathBuf::from_str("/.a/path/with/not_hidden_dir/file.txt").expect("test error");
         let watch = PathBuf::from_str("/.a/path").expect("test error");
         assert!(!is_hidden(&filename, &watch));
+    }
+
+    #[test]
+    fn test_relative_filename() {
+        let filename =
+            PathBuf::from_str("/home/user/.config/app/Cache/Cache_Data/index-dir/temp-index")
+                .expect("Could not create PathBuf");
+        let watch = PathBuf::from_str("/home/user/.config").expect("Could not create PathBuf");
+        assert_eq!(
+            relative_path_within_dir(&filename, &watch),
+            String::from("app/Cache/Cache_Data/index-dir/temp-index")
+        );
     }
 }
