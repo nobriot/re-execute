@@ -128,6 +128,8 @@ fn is_file_hidden(filename: &Path) -> bool {
     false
 }
 
+/// Returns a String showing the relative path of a
+/// filename located inside a directory
 fn relative_path_within_dir<P, Q>(filename: P, dir: Q) -> String
 where
     P: AsRef<Path>,
@@ -232,9 +234,7 @@ mod tests {
 
     #[test]
     fn test_relative_filename() {
-        let filename =
-            PathBuf::from_str("/home/user/.config/app/Cache/Cache_Data/index-dir/temp-index")
-                .expect("Could not create PathBuf");
+        let filename = Path::new("/home/user/.config/app/Cache/Cache_Data/index-dir/temp-index");
         let watch = PathBuf::from_str("/home/user/.config").expect("Could not create PathBuf");
         assert_eq!(
             relative_path_within_dir(&filename, &watch),
