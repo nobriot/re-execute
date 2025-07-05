@@ -46,6 +46,8 @@ pub fn is_git_ignored(filename: &PathBuf, watch: &PathBuf) -> bool {
 // ------------------------------------------------------------------------------------------------
 // private
 
+// OMG what did the people designing this pattern matching where thinking ??
+
 // From the official docs:
 // https://git-scm.com/docs/gitignore
 // PATTERN FORMAT
@@ -88,6 +90,10 @@ struct GitIgnoreRule {
     pattern: Vec<GitIgnoreRuleElements>,
     /// Is the pattern negated
     is_negated: bool,
+    /// Regular matching, from the root of the .gitignore file, or at any dir level in between
+    match_all_levels: bool,
+    /// Do we match files and dirs, or dirs only
+    dirs_only: bool,
 }
 
 impl GitIgnoreRule {
@@ -101,10 +107,12 @@ impl GitIgnoreRule {
         }
 
         let is_negated = line.starts_with("!");
+        let match_all_levels = line[..line.len() - 1].chars().filter(|c| *c == '/').count() == 0;
+        let dirs_only = line.ends_with("/");
+
         let line = if is_negated { &line[1..] } else { line };
 
-        let mut chars =
-            if is_negated { line[1..].chars().peekable() } else { line.chars().peekable() };
+        let mut chars = line.chars().peekable();
 
         while let Some(c) = chars.next() {
             match c {
@@ -152,9 +160,9 @@ impl GitIgnoreRule {
 
                     pattern.push(GitIgnoreRuleElements::CharRange((negated, range)));
                 }
-                _ => {
+                l => {
                     // Handle literals
-                    let mut literal = c.to_string();
+                    let mut literal = l.to_string();
                     while let Some(&next) = chars.peek() {
                         if next == '/' || next == '*' || next == '?' || next == '[' || next == '\\'
                         {
@@ -167,21 +175,39 @@ impl GitIgnoreRule {
             }
         }
 
-        Some(GitIgnoreRule { pattern, is_negated })
+        Some(GitIgnoreRule { pattern, is_negated, match_all_levels, dirs_only })
     }
 
     /// Checks if the current git ignore rule matches a file within a dir
     pub fn file_matches<D>(&self, file: &Path, dir: &D) -> bool
     where
-        D: AsRef<Path>,
+        D: AsRef<Path> + std::fmt::Debug,
     {
+        println!("File matches {:?} within {:?}", file, dir);
         // We take the part of the file that is relative to the dir
         let candidate = match file.strip_prefix(dir) {
             Ok(path) => path.to_string_lossy(),
             Err(_) => return false,
         };
+        println!("Checking {:?} with {:?}", candidate.as_ref(), &self.pattern);
 
-        self.string_matches(candidate.as_ref(), &self.pattern)
+        if self.match_all_levels {
+            println!("All elvels");
+            let mut current = candidate.as_ref();
+            loop {
+                if self.string_matches(current.as_ref(), &self.pattern) {
+                    return true;
+                }
+                if let Some(i) = current.find('/') {
+                    current = &current[i + 1..];
+                } else {
+                    return false;
+                }
+            }
+        } else {
+            println!("Simple match");
+            self.string_matches(candidate.as_ref(), &self.pattern)
+        }
     }
 
     /// Checks if a file name (string) is matching a collection of GitIgnoreRule
@@ -212,13 +238,37 @@ impl GitIgnoreRule {
                     }
                 }
                 GitIgnoreRuleElements::Asterisk => {
-                    // Consume until the next '/' or end of string
-                    while let Some(&c) = p_chars.peek() {
-                        if c == '/' {
-                            break;
+                    // if no more rules, after the *, so it matches anything until a slash.
+                    if rule_elements.peek().is_none() {
+                        while let Some(&c) = p_chars.peek() {
+                            if c == '/' {
+                                break;
+                            }
+                            p_chars.next();
                         }
-                        p_chars.next();
                     }
+
+                    // If there are more rules and we got a /, we can already tell it does not match
+                    if let Some(&c) = p_chars.peek() {
+                        if c == '/' {
+                            return false;
+                        }
+                    }
+
+                    // Else we have to match any number of characters and try to apply the rest
+                    // There is probably a better way than cloning here...
+                    let remaining_rules: Vec<_> = rule_elements.map(|r| r.clone()).collect();
+
+                    // Now try to fit the remainder of the string with the rules
+                    // TODO: There is probably some pruning possible here.
+                    let file: String = p_chars.collect();
+                    for i in 0..file.len() {
+                        if self.string_matches(&file[i..], &remaining_rules) {
+                            return true;
+                        }
+                    }
+
+                    return false;
                 }
                 GitIgnoreRuleElements::DoubleAsterisk => {
                     // Try to match the rest, including accross directories
@@ -231,9 +281,17 @@ impl GitIgnoreRule {
                     let remaining_rules: Vec<_> = rule_elements.map(|r| r.clone()).collect();
 
                     // Now try to fit the remainder of the string with the rules
+                    // TODO: There is probably some pruning possible here.
                     let file: String = p_chars.collect();
-                    for i in 0..file.len() {
-                        if self.string_matches(&file[i..], &remaining_rules) {
+                    if !file.contains('/') {
+                        // ** and we are trying anything that does not contain a slash.
+                        // We can conclude it's a match
+                        return true;
+                    }
+                    let mut remainder = file.as_str();
+                    while let Some(i) = remainder.find('/') {
+                        remainder = &remainder[i + 1..];
+                        if self.string_matches(remainder, &remaining_rules) {
                             return true;
                         }
                     }
@@ -272,7 +330,8 @@ impl GitIgnoreRule {
         }
 
         // We have a match if we consumed all chars from the candidate path
-        p_chars.next().is_none()
+        // If dirs only, we assume it's a match if we consumed all the "rules"
+        p_chars.next().is_none() || self.dirs_only
     }
 }
 
@@ -326,5 +385,227 @@ impl GitIgnoreRules {
         }
 
         rules
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs::{self, File};
+    use std::io::Write;
+    use tempfile::tempdir;
+
+    #[test]
+    fn test_pattern_from_str() {
+        let rule = GitIgnoreRule::from_str("*.log").unwrap();
+        assert_eq!(
+            rule.pattern,
+            vec![
+                GitIgnoreRuleElements::Asterisk,
+                GitIgnoreRuleElements::Literal(".log".to_string())
+            ]
+        );
+        assert!(!rule.is_negated);
+
+        // Test negated pattern
+        let rule = GitIgnoreRule::from_str("!important.log").unwrap();
+        assert_eq!(rule.pattern, vec![GitIgnoreRuleElements::Literal("important.log".to_string())]);
+        assert!(rule.is_negated);
+
+        // Test character range
+        let rule = GitIgnoreRule::from_str("[a-z].txt").unwrap();
+        assert_eq!(
+            rule.pattern,
+            vec![
+                GitIgnoreRuleElements::CharRange((false, vec![('a', 'z')])),
+                GitIgnoreRuleElements::Literal(".txt".to_string())
+            ]
+        );
+
+        // Test comments
+        let rule = GitIgnoreRule::from_str("#foo[bar].txt");
+        assert!(rule.is_none());
+
+        // Empty line
+        let rule = GitIgnoreRule::from_str("");
+        assert!(rule.is_none());
+    }
+
+    #[test]
+    fn test_file_matches() {
+        let rule = GitIgnoreRule::from_str("*.log").unwrap();
+        assert!(rule.file_matches(Path::new("error.log"), &Path::new(".")));
+        assert!(!rule.file_matches(Path::new("error.txt"), &Path::new(".")));
+
+        let rule = GitIgnoreRule::from_str("!important.log").unwrap();
+        assert!(!rule.file_matches(Path::new("important.log"), &Path::new(".")));
+
+        let rule = GitIgnoreRule::from_str("**/temp/*").unwrap();
+        assert!(rule.file_matches(Path::new("foo/temp/file.txt"), &Path::new(".")));
+        assert!(!rule.file_matches(Path::new("foo/temp/"), &Path::new(".")));
+
+        let rule = GitIgnoreRule::from_str("a/**/b").unwrap();
+        assert!(rule.file_matches(Path::new("a/x/y/b"), &Path::new(".")));
+        assert!(!rule.file_matches(Path::new("a/x/y/c"), &Path::new(".")));
+    }
+
+    #[test]
+    fn test_from_ignore_file() {
+        let dir = tempdir().unwrap();
+        let ignore_file_path = dir.path().join(".gitignore");
+
+        // Create a .gitignore file
+        let mut file = File::create(&ignore_file_path).unwrap();
+        writeln!(file, "*.log").unwrap();
+        writeln!(file, "!important.log").unwrap();
+
+        let rules = GitIgnoreRules::from_ignore_file(&ignore_file_path);
+        assert_eq!(rules.rules.len(), 2);
+
+        assert_eq!(
+            rules.rules[0].pattern,
+            vec![
+                GitIgnoreRuleElements::Asterisk,
+                GitIgnoreRuleElements::Literal(".log".to_string())
+            ]
+        );
+        assert!(!rules.rules[0].is_negated);
+
+        assert_eq!(
+            rules.rules[1].pattern,
+            vec![GitIgnoreRuleElements::Literal("important.log".to_string())]
+        );
+        assert!(rules.rules[1].is_negated);
+    }
+
+    #[test]
+    fn test_from_dir() {
+        let dir = tempdir().unwrap();
+        let subdir = dir.path().join("subdir");
+        fs::create_dir(&subdir).unwrap();
+
+        // Create .gitignore files
+        let root_ignore = dir.path().join(".gitignore");
+        let mut file = File::create(&root_ignore).unwrap();
+        writeln!(file, "*.log").unwrap();
+
+        let sub_ignore = subdir.join(".gitignore");
+        let mut file = File::create(&sub_ignore).unwrap();
+        writeln!(file, "!important.log").unwrap();
+
+        let rules = GitIgnoreRules::from_dir(&subdir, &dir.path().to_path_buf());
+        assert_eq!(rules.len(), 2);
+
+        // Check root .gitignore
+        assert_eq!(
+            rules[1].rules[0].pattern,
+            vec![
+                GitIgnoreRuleElements::Asterisk,
+                GitIgnoreRuleElements::Literal(".log".to_string())
+            ]
+        );
+
+        // Check subdir .gitignore
+        assert_eq!(
+            rules[0].rules[0].pattern,
+            vec![GitIgnoreRuleElements::Literal("important.log".to_string())]
+        );
+        assert!(rules[0].rules[0].is_negated);
+    }
+
+    #[test]
+    fn test_complex_patterns() {
+        let dir = tempdir().unwrap();
+        let dir = dir.path();
+        let ignore_file_path = dir.join(".gitignore");
+        let mut file = File::create(&ignore_file_path).unwrap();
+
+        // Rules
+        writeln!(file, "**/foo/**/bar").unwrap(); // 0
+        writeln!(file, "dir/").unwrap(); // 1
+        writeln!(file, "[ei]*.log").unwrap(); // 2
+        writeln!(file, "[a-c]*.txt").unwrap(); // 3
+        writeln!(file, "[!c-f]*.txt").unwrap(); // 4
+
+        let rules = GitIgnoreRules::from_ignore_file(&ignore_file_path);
+
+        // Test double asterisk across directories
+        assert!(rules.rules[0].file_matches(dir.join("a/foo/b/bar").as_path(), &dir));
+        assert!(rules.rules[0].file_matches(dir.join("foo/bar").as_path(), &dir));
+        assert!(!rules.rules[0].file_matches(dir.join("a/foo/baz/bar").as_path(), &dir));
+
+        // Test trailing slash for directories
+        assert!(rules.rules[1].file_matches(dir.join("dir/").as_path(), &dir));
+        assert!(rules.rules[1].file_matches(dir.join("dir/file.txt").as_path(), &dir));
+        assert!(!rules.rules[1].file_matches(dir.join("directory/").as_path(), &dir));
+
+        // test with range and wildcard
+        assert!(rules.rules[2].file_matches(dir.join("error.log").as_path(), &dir));
+        assert!(rules.rules[2].file_matches(dir.join("important.log").as_path(), &dir));
+        assert!(!rules.rules[2].file_matches(dir.join("unimportant.log").as_path(), &dir));
+
+        // Test character ranges
+        assert!(rules.rules[3].file_matches(dir.join("a_file.txt").as_path(), &dir));
+        assert!(rules.rules[3].file_matches(dir.join("b_file.txt").as_path(), &dir));
+        assert!(!rules.rules[3].file_matches(dir.join("d_file.txt").as_path(), &dir));
+
+        // Test negated character ranges
+        assert!(rules.rules[4].file_matches(dir.join("c_file.txt").as_path(), &dir));
+        assert!(rules.rules[4].file_matches(dir.join("d_file.txt").as_path(), &dir));
+        assert!(!rules.rules[4].file_matches(dir.join("e_file.txt").as_path(), &dir));
+    }
+
+    #[test]
+    fn test_edge_cases() {
+        // Test empty .gitignore file
+        let dir = tempdir().unwrap();
+        let ignore_file_path = dir.path().join(".gitignore");
+        File::create(&ignore_file_path).unwrap(); // Create an empty file
+
+        let rules = GitIgnoreRules::from_ignore_file(&ignore_file_path);
+        assert!(rules.rules.is_empty());
+
+        // Test file not under the watched directory
+        let rule = GitIgnoreRule::from_str("*.log").unwrap();
+        assert!(!rule.file_matches(Path::new("/outside/error.log"), &Path::new("/inside")));
+
+        // Test pattern with escaped characters
+        let rule = GitIgnoreRule::from_str(r"\!important.log").unwrap();
+        assert!(rule.file_matches(Path::new("!important.log"), &Path::new(".")));
+        assert!(!rule.file_matches(Path::new("important.log"), &Path::new(".")));
+
+        // Test pattern with trailing spaces
+        let rule = GitIgnoreRule::from_str("*.log   ").unwrap();
+        assert!(rule.file_matches(Path::new("error.log"), &Path::new(".")));
+        assert!(!rule.file_matches(Path::new("error.txt"), &Path::new(".")));
+
+        // Test pattern with only slashes
+        let rule = GitIgnoreRule::from_str("/").unwrap();
+        assert!(rule.file_matches(Path::new("/"), &Path::new("/")));
+        assert!(!rule.file_matches(Path::new("/file.txt"), &Path::new("/")));
+    }
+
+    #[test]
+    fn test_combined_rules() {
+        let dir = tempdir().unwrap();
+        let dir = dir.path();
+        let ignore_file_path = dir.join(".gitignore");
+
+        // Create a .gitignore file with multiple rules
+        let mut file = File::create(&ignore_file_path).unwrap();
+        writeln!(file, "*.log").unwrap();
+        writeln!(file, "!important.log").unwrap();
+        writeln!(file, "temp/").unwrap();
+        writeln!(file, "**/cache/**").unwrap();
+
+        let rules = GitIgnoreRules::from_ignore_file(&ignore_file_path);
+
+        // Test ignored files
+        assert!(rules.rules[0].file_matches(dir.join("error.log").as_path(), &dir));
+        assert!(rules.rules[1].file_matches(dir.join("important.log").as_path(), &dir));
+        assert!(rules.rules[1].is_negated);
+        assert!(rules.rules[2].file_matches(dir.join("temp/file.txt").as_path(), &dir));
+        assert!(rules.rules[3].file_matches(dir.join("foo/cache/bar").as_path(), &dir));
+        assert!(!rules.rules[3].file_matches(dir.join("foo/cache").as_path(), &dir));
     }
 }
