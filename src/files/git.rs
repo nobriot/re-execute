@@ -279,7 +279,8 @@ impl GitIgnoreRule {
                     }
 
                     // If there are more rules and we got a /, we can already tell it does not match
-                    if let Some(&c) = p_chars.peek() {
+                    // Consume the next character as * must match at least 1 char
+                    if let Some(c) = p_chars.next() {
                         if c == '/' {
                             return false;
                         }
@@ -292,7 +293,8 @@ impl GitIgnoreRule {
                     // Now try to fit the remainder of the string with the rules
                     // TODO: There is probably some pruning possible here.
                     let file: String = p_chars.collect();
-                    for i in 0..file.len() {
+                    let stop_index = if let Some(i) = file.find('/') { i } else { file.len() };
+                    for i in 0..stop_index {
                         if self.string_matches(&file[i..], &remaining_rules) {
                             return true;
                         }
@@ -621,7 +623,16 @@ mod tests {
         let rule = GitIgnoreRule::from_str("*.log").unwrap();
 
         // file_matches(dir.join("a/foo/b/bar").as_path(), &dir));
-        assert!(!rule.file_matches(dir.join("outside/error.log").as_path(), &dir));
+        assert!(rule.file_matches(dir.join("error.log").as_path(), &dir));
+        assert!(rule.file_matches(dir.join("outside/error.log").as_path(), &dir));
+
+        // Test * consumes at least 1 char
+        let rule = GitIgnoreRule::from_str("a*a.log").unwrap();
+
+        // file_matches(dir.join("a/foo/b/bar").as_path(), &dir));
+        assert!(!rule.file_matches(dir.join("aa.log").as_path(), &dir));
+        assert!(rule.file_matches(dir.join("aba.log").as_path(), &dir));
+        assert!(!rule.file_matches(dir.join("a/a.log").as_path(), &dir));
 
         // Test pattern with escaped characters
         let rule = GitIgnoreRule::from_str(r"\!important.log").unwrap();
