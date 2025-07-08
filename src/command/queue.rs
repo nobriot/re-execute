@@ -165,7 +165,7 @@ impl Queue {
                 }
                 Err(RecvTimeoutError::Timeout) => {}
                 Err(e) => {
-                    eprintln!("Channel error: {:?}", e);
+                    eprintln!("Channel error: {e:?}");
                     break;
                 }
             }
@@ -178,7 +178,7 @@ impl Queue {
                     let tx_result = self.execute();
 
                     if let Err(e) = tx_result {
-                        eprintln!("Exec Tx Report Channel error: {:?}", e);
+                        eprintln!("Exec Tx Report Channel error: {e:?}");
                         return;
                     }
 

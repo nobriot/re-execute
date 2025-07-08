@@ -19,7 +19,7 @@ pub fn get_exit_code_string(exit_code: ExitCode) -> String {
         match c {
             0 => format!("{:<3}", "✔️".green()),
             130 => format!("{:<3}", "130".yellow()),
-            c => format!("{:<3}", c).red().to_string(),
+            c => format!("{c:<3}").red().to_string(),
         }
     } else {
         format!("{:<3}", "?? ".bold().bright_yellow())

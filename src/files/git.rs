@@ -397,7 +397,7 @@ impl GitIgnoreRules {
                 }
             }
         } else {
-            eprintln!("Error reading contents of {:?}", path);
+            eprintln!("Error reading contents of {path:?}");
         }
 
         Self { rules, rule_path: path.to_path_buf() }

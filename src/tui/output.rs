@@ -69,7 +69,7 @@ impl Output {
         let result = self.multi.println(message);
 
         if let Err(e) = result {
-            eprintln!("Error printing title: {:?}", e);
+            eprintln!("Error printing title: {e:?}");
         }
     }
 
@@ -127,7 +127,7 @@ impl Output {
                 let prefix = if time.is_some() {
                     format!("#{}. {}", index, time.as_ref().unwrap())
                 } else {
-                    format!("#{}.", index)
+                    format!("#{index}.")
                 };
                 pb.set_prefix(prefix.bright_black().to_string());
                 pb.set_message(format!("{}: {}", self.file_str.bold(), files));
