@@ -195,7 +195,7 @@ impl Output {
     /// Plain progress bar, used to print lines basically
     fn progress_bar_plain_style() -> ProgressStyle {
         ProgressStyle::default_bar()
-            .template("{wide_msg}")
+            .template("\n{wide_msg}")
             .expect("no default template error")
     }
 
