@@ -237,7 +237,7 @@ mod tests {
         let filename = Path::new("/home/user/.config/app/Cache/Cache_Data/index-dir/temp-index");
         let watch = PathBuf::from_str("/home/user/.config").expect("Could not create PathBuf");
         assert_eq!(
-            relative_path_within_dir(&filename, &watch),
+            relative_path_within_dir(filename, &watch),
             String::from("app/Cache/Cache_Data/index-dir/temp-index")
         );
     }

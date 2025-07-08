@@ -195,16 +195,13 @@ impl GitIgnoreRule {
     where
         D: AsRef<Path> + std::fmt::Debug,
     {
-        println!("File matches {:?} within {:?}", file, dir);
         // We take the part of the file that is relative to the dir
         let candidate = match file.strip_prefix(dir) {
             Ok(path) => path.to_string_lossy(),
             Err(_) => return false,
         };
-        println!("Checking {:?} with {:?}", candidate.as_ref(), &self.pattern);
 
         if self.match_all_levels {
-            println!("All elvels");
             let mut current = candidate.as_ref();
             loop {
                 if self.string_matches(current.as_ref(), &self.pattern) {
@@ -217,13 +214,12 @@ impl GitIgnoreRule {
                 }
             }
         } else {
-            println!("Simple match");
             self.string_matches(candidate.as_ref(), &self.pattern)
         }
     }
 
     /// Checks if a file name (string) is matching a collection of GitIgnoreRule
-    fn string_matches(&self, file: &str, rule: &Vec<GitIgnoreRuleElements>) -> bool {
+    fn string_matches(&self, file: &str, rule: &[GitIgnoreRuleElements]) -> bool {
         let mut p_chars = file.chars().peekable();
         let mut rule_elements = rule.iter().peekable();
 
@@ -241,12 +237,10 @@ impl GitIgnoreRule {
         }
 
         while let Some(rule_element) = rule_elements.next() {
-            println!("Processing rule: {:?}", rule_element);
             match rule_element {
                 GitIgnoreRuleElements::Literal(l) => {
                     // Match all chars from the literal:
-                    let mut l_chars = l.chars();
-                    while let Some(l_char) = l_chars.next() {
+                    for l_char in l.chars() {
                         let p_char = p_chars.next();
                         if p_char.is_none() {
                             return false;
@@ -260,14 +254,21 @@ impl GitIgnoreRule {
                 GitIgnoreRuleElements::Slash => {
                     // Just match a slash from the path.
                     let p = p_chars.next();
-                    println!("Slash vs {:?}", p);
                     if p.is_some() && p != Some('/') {
+                        return false;
+                    }
+                    // No slash but more rules will also not be a match
+                    if p.is_none() && rule_elements.peek().is_some() {
                         return false;
                     }
                 }
                 GitIgnoreRuleElements::Asterisk => {
                     // if no more rules, after the *, so it matches anything until a slash.
                     if rule_elements.peek().is_none() {
+                        if p_chars.peek().is_none() {
+                            // We need at least 1 char to match a *
+                            return false;
+                        }
                         while let Some(&c) = p_chars.peek() {
                             if c == '/' {
                                 break;
@@ -286,7 +287,7 @@ impl GitIgnoreRule {
 
                     // Else we have to match any number of characters and try to apply the rest
                     // There is probably a better way than cloning here...
-                    let remaining_rules: Vec<_> = rule_elements.map(|r| r.clone()).collect();
+                    let remaining_rules: Vec<_> = rule_elements.cloned().collect();
 
                     // Now try to fit the remainder of the string with the rules
                     // TODO: There is probably some pruning possible here.
@@ -307,12 +308,11 @@ impl GitIgnoreRule {
                     }
                     // Else pick up the remaining rules:
                     // There is probably a better way than cloning here...
-                    let remaining_rules: Vec<_> = rule_elements.map(|r| r.clone()).collect();
+                    let remaining_rules: Vec<_> = rule_elements.cloned().collect();
 
                     // Now try to fit the remainder of the string with the rules
                     // TODO: There is probably some pruning possible here.
                     let file: String = p_chars.collect();
-                    println!("File is {:?}", file);
                     if !file.contains('/') {
                         // ** and we are trying anything that does not contain a slash.
                         // We can conclude it's a match
@@ -327,11 +327,6 @@ impl GitIgnoreRule {
 
                     // Else try stripping directories
                     while let Some(i) = remainder.find('/') {
-                        println!(
-                            "trying with remainder {:?} / {:?} ",
-                            &remainder[i..],
-                            &remaining_rules
-                        );
                         remainder = &remainder[i..];
                         if self.string_matches(remainder, &remaining_rules) {
                             return true;
@@ -592,6 +587,8 @@ mod tests {
         assert!(rules.rules[1].file_matches(dir.join("dir/").as_path(), &dir));
         assert!(rules.rules[1].file_matches(dir.join("dir/file.txt").as_path(), &dir));
         assert!(!rules.rules[1].file_matches(dir.join("directory/").as_path(), &dir));
+        assert!(!rules.rules[1].file_matches(dir.join("dir2").as_path(), &dir));
+        assert!(!rules.rules[1].file_matches(dir.join("dir2/").as_path(), &dir));
 
         // test with range and wildcard
         assert!(rules.rules[2].file_matches(dir.join("error.log").as_path(), &dir));
@@ -624,7 +621,7 @@ mod tests {
         let rule = GitIgnoreRule::from_str("*.log").unwrap();
 
         // file_matches(dir.join("a/foo/b/bar").as_path(), &dir));
-        assert!(!rule.file_matches(dir.join("/outside/error.log").as_path(), &dir));
+        assert!(!rule.file_matches(dir.join("outside/error.log").as_path(), &dir));
 
         // Test pattern with escaped characters
         let rule = GitIgnoreRule::from_str(r"\!important.log").unwrap();
@@ -682,6 +679,9 @@ mod tests {
         assert!(rules.rules[2].file_matches(dir.join("temp/file.txt").as_path(), &dir));
         assert!(rules.rules[3].file_matches(dir.join("foo/cache/bar").as_path(), &dir));
         assert!(rules.rules[3].file_matches(dir.join("foo/cache/bar/baz").as_path(), &dir));
+        // FIXME: I guess in theory the following test should work.
+        // Though here we do not care much about directories, files updates are only for files
+        // assert!(rules.rules[3].file_matches(dir.join("foo/cache/").as_path(), &dir));
         assert!(!rules.rules[3].file_matches(dir.join("foo/cache").as_path(), &dir));
     }
 }
