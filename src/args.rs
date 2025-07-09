@@ -26,7 +26,7 @@ pub struct Args {
     /// Command/program to run
     #[arg(
         trailing_var_arg = true,
-        help = "Command/program to run",
+        help = "Command/program to run. Use {file} or {files} to include filenames",
         long_help = r#"Command/program to run
 Placeholders:
   Use {file} to substitute the updated file in the command
@@ -47,6 +47,10 @@ Placeholders:
     /// See regex docs here: https://docs.rs/regex/latest/regex/#syntax
     #[arg(short, long)]
     pub regex: Vec<String>,
+
+    /// Regex that files must not match against
+    #[arg(short = 'R', long)]
+    pub ignored_regex: Vec<String>,
 
     /// Current Working Directory for the command being executed.
     /// By default, it will be the same from the rex command.
@@ -97,6 +101,9 @@ Placeholders:
     /// Compiled Regexps
     #[clap(skip)]
     pub regexps: Vec<Regex>,
+    /// Compiled Negative Regexps (i.e. what filenames must not match)
+    #[clap(skip)]
+    pub ignored_regexps: Vec<Regex>,
 }
 
 impl Args {
@@ -109,6 +116,14 @@ impl Args {
                 Err(e) => return Err(arg_error!(InvalidRegex, r.clone(), e.to_string())),
             }
         }
+        for r in &self.ignored_regex {
+            let regex_res = Regex::new(r);
+            match regex_res {
+                Ok(regex) => self.ignored_regexps.push(regex),
+                Err(e) => return Err(arg_error!(InvalidRegex, r.clone(), e.to_string())),
+            }
+        }
+
         // Remove all trailings dots if the user has given extensions with
         // `.txt` instead of `txt`
         // Also convert all extensions to lowercase to compare

@@ -29,7 +29,10 @@ pub fn should_be_ignored(filename: &PathBuf, args: &Args, watch: &PathBuf) -> bo
     if !args.deleted && !filename.exists() {
         return true;
     }
-    if !has_regex_match(&args.regexps, filename, watch) {
+    if !has_all_regex_match(&args.regexps, filename, watch) {
+        return true;
+    }
+    if has_any_regex_match(&args.ignored_regexps, filename, watch) {
         return true;
     }
     if !args.no_gitignore && is_git_ignored(filename, watch) {
@@ -83,18 +86,15 @@ pub fn is_hidden(filename: &Path, watch: &PathBuf) -> bool {
     false
 }
 
-/// Checks if the file or any parent directory is hidden
-/// up to the watch directory level.
-pub fn has_regex_match(regex: &[Regex], filename: &Path, watch: &PathBuf) -> bool {
-    // No regex given, we accept all files
+/// Checks if the filename relative to its watch matches all the passed regexps
+/// returns true if no regexps are passed.
+pub fn has_all_regex_match(regex: &[Regex], filename: &Path, watch: &PathBuf) -> bool {
     if regex.is_empty() {
         return true;
     }
 
-    // first stop, we actually clip the part of the filename
     let path = relative_path_within_dir(filename, watch);
 
-    // Now check that all the regexes are matching
     for r in regex {
         if !r.is_match(&path) {
             return false;
@@ -103,6 +103,25 @@ pub fn has_regex_match(regex: &[Regex], filename: &Path, watch: &PathBuf) -> boo
 
     true
 }
+
+/// Checks if the filename relative to its watch matches any of the passed regexps
+/// returns false if no regexps are passed.
+pub fn has_any_regex_match(regex: &[Regex], filename: &Path, watch: &PathBuf) -> bool {
+    if regex.is_empty() {
+        return false;
+    }
+
+    let path = relative_path_within_dir(filename, watch);
+
+    for r in regex {
+        if r.is_match(&path) {
+            return true;
+        }
+    }
+
+    false
+}
+
 // ------------------------------------------------------------------------------------------------
 // private
 
