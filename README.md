@@ -28,6 +28,12 @@ will not trigger any command execution.
 rex [OPTIONS] [COMMAND]...
 ```
 
+If the command contains the **`{file}`** string, it will be replaced by updated
+files and one command per updated file will be executed.
+
+If the command contains the **`{files}`** string, it will be replaced by 
+a space separated list of files that were updated, and one command in total will be executed.
+
 ### Examples
 
 Just annouce updated files in your config folder:
@@ -50,19 +56,19 @@ rex -e puml plantuml {file}
 ```
 
 Build your documentation when a `.md` or `.rst` file is updated in the `docs/` directory
+Using `-e md,rst` is also valid. Use `-e ""` to allow files without extensions.
 
 ```console
 rex -f docs/ -e md -e rst make docs
 ```
 
+Launch some tests when you update test files:
+
+```console
+rex -f src/ -e py -r 'test' -- pytest -k {file}
+```
+
 Using `-e md,rst` is also valid. Use `-e ""` to allow files without extensions.
-
-## Exiting
-
-Once the program start, it's like [VIM](https://www.vim.org/), you never exit it 😉.
-
-Pressing Q/q and then Enter will work, but it's quirky at the moment.
-Else just press Ctrl+C.
 
 ### Env variables
 
@@ -85,6 +91,14 @@ A non-exhaustive list of parameters for the program:
 * `-H` / `--hidden`: Include hidden files in the triggers
 * `-d` / `--deleted`: Call the commands also with files that have been deleted
 * `-a` / `--abort-previous`: Abort previous ongoing command execution when files are updated while the program is running
+
+## Exiting
+
+Once the program start, it's like [VIM](https://www.vim.org/), you never exit it 😉.
+
+Pressing Q/q and then Enter will work, but it's quirky.
+Else just press Ctrl+C.
+
 
 ## Related tools
 
