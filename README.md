@@ -68,8 +68,6 @@ Launch some tests when you update test files:
 rex -f src/ -e py -r 'test' -- pytest -k {file}
 ```
 
-Using `-e md,rst` is also valid. Use `-e ""` to allow files without extensions.
-
 ### Env variables
 
 Pass additional environment variables using the --env with KEY=VALUE format
