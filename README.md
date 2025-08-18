@@ -103,6 +103,7 @@ Else just press Ctrl+C.
 This is just a small program I made for my own fun. 
 If you'd like the more professional tools, look here:
 
+* [reflex](https://github.com/cespare/reflex)
 * [watchexec](https://github.com/watchexec/watchexec)
 * [fswatch](https://github.com/emcrisostomo/fswatch)
 * [entr](https://github.com/eradman/entr)
