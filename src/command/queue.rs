@@ -173,18 +173,18 @@ impl Queue {
             self.workers.retain(|w| !w.is_finished());
 
             // See if we want to execute something
-            if let Some(t) = self.last_update {
-                if t.elapsed() > std::time::Duration::from_millis(200) {
-                    let tx_result = self.execute();
+            if let Some(t) = self.last_update
+                && t.elapsed() > std::time::Duration::from_millis(200)
+            {
+                let tx_result = self.execute();
 
-                    if let Err(e) = tx_result {
-                        eprintln!("Exec Tx Report Channel error: {e:?}");
-                        return;
-                    }
+                if let Err(e) = tx_result {
+                    eprintln!("Exec Tx Report Channel error: {e:?}");
+                    return;
+                }
 
-                    if self.files.is_empty() {
-                        self.last_update = None;
-                    }
+                if self.files.is_empty() {
+                    self.last_update = None;
                 }
             }
         }

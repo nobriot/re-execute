@@ -127,10 +127,10 @@ pub fn has_any_regex_match(regex: &[Regex], filename: &Path, watch: &PathBuf) ->
 
 /// Checks if a single file is hidden.
 fn is_file_hidden(filename: &Path) -> bool {
-    if let Some(basename) = filename.file_name() {
-        if basename.to_string_lossy().starts_with(".") {
-            return true;
-        }
+    if let Some(basename) = filename.file_name()
+        && basename.to_string_lossy().starts_with(".")
+    {
+        return true;
     }
 
     #[cfg(windows)]

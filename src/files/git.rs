@@ -116,10 +116,10 @@ impl GitIgnoreRule {
         let mut spaces_to_trim = 0;
         let mut rev_chars = line.chars().rev().peekable();
         while let Some(' ') = rev_chars.next() {
-            if let Some(c) = rev_chars.peek() {
-                if *c != '\\' {
-                    spaces_to_trim += 1;
-                }
+            if let Some(c) = rev_chars.peek()
+                && *c != '\\'
+            {
+                spaces_to_trim += 1;
             }
         }
         let line = &line[..line.len() - spaces_to_trim];
@@ -280,10 +280,10 @@ impl GitIgnoreRule {
 
                     // If there are more rules and we got a /, we can already tell it does not match
                     // Consume the next character as * must match at least 1 char
-                    if let Some(c) = p_chars.next() {
-                        if c == '/' {
-                            return false;
-                        }
+                    if let Some(c) = p_chars.next()
+                        && c == '/'
+                    {
+                        return false;
                     }
 
                     // Else we have to match any number of characters and try to apply the rest
