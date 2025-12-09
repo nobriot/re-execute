@@ -1,7 +1,8 @@
 [package]
 name = "re-execute"
 version = "0.4.3"
-edition = "2021"
+edition = "2024"
+rust-version = "1.91"
 
 authors = ["Nicolas Woltmann"]
 description = "Re-execute commands or programs automatically when files are updated"
