@@ -124,8 +124,8 @@ impl Output {
                 let time = if self.time { Some(Self::get_local_time()) } else { None };
 
                 pb.set_style(Self::progress_bar_style());
-                let prefix = if time.is_some() {
-                    format!("#{}. {}", index, time.as_ref().unwrap())
+                let prefix = if let Some(ref t) = time {
+                    format!("#{}. {}", index, t)
                 } else {
                     format!("#{index}.")
                 };
@@ -140,7 +140,8 @@ impl Output {
                 if self.quiet {
                     return;
                 }
-                // TODO: We could consider prepeding output with the command number and avoid mixing them
+                // TODO: We could consider prepeding output with the command number and avoid
+                // mixing them
                 if let Some(stdout) = report.stdout {
                     self.println(stdout);
                 }
