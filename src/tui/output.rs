@@ -160,13 +160,8 @@ impl Output {
                 let pb = &cache.progress_bar;
 
                 pb.set_style(Self::progress_bar_finished_style());
-                let prefix = if cache.time.is_some() {
-                    format!(
-                        "#{}. {} {}",
-                        index,
-                        cache.time.as_ref().unwrap(),
-                        get_exit_code_string(report.exit_code)
-                    )
+                let prefix = if let Some(t) = &cache.time {
+                    format!("#{}. {} {}", index, t, get_exit_code_string(report.exit_code))
                 } else {
                     format!("#{}. {}", index, get_exit_code_string(report.exit_code))
                 };

@@ -10,9 +10,7 @@ You will need [cargo](https://doc.rust-lang.org/cargo/getting-started/installati
 installed. Then install using:
 
 ```console
-git clone https://github.com/nobriot/re-execute.git
-cd re-execute/
-cargo install --path .
+cargo install --git https://github.com/nobriot/re-execute.git
 ```
 
 The command is shortened to `rex`
@@ -89,6 +87,7 @@ A non-exhaustive list of parameters for the program:
 * `-H` / `--hidden`: Include hidden files in the triggers
 * `-d` / `--deleted`: Call the commands also with files that have been deleted
 * `-a` / `--abort-previous`: Abort previous ongoing command execution when files are updated while the program is running
+* `--force-poll`: Use polling to get files update events. May be necessary on some machines.
 
 ## Exiting
 

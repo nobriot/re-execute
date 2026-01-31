@@ -1,6 +1,6 @@
 [package]
 name = "re-execute"
-version = "0.4.3"
+version = "0.4.4"
 edition = "2024"
 rust-version = "1.91"
 
@@ -17,17 +17,17 @@ name = "rex"
 path = "src/main.rs"
 
 [dependencies]
-clap = { version = "4.5.54", features = ["derive"] }
+clap = { version = "4.5.56", features = ["derive", "wrap_help"] }
 notify = "8.2.0"
-colored = "3.0.0"
-thiserror = "2.0.17"
+colored = "3.1.1"
+thiserror = "2.0.18"
 anyhow = "1.0.100"
 shell-words = "1.1.1"
 same-file = "1.0.6"
 indicatif = "0.18.3"
 crossterm = "0.29.0"
 crossbeam-channel = "0.5.15"
-chrono = "0.4.42"
+chrono = "0.4.43"
 regex = "1.12.2"
 
 [profile.release]

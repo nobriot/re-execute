@@ -1,5 +1,5 @@
 use anyhow::Result;
-use clap::Parser;
+use clap::{CommandFactory, FromArgMatches, builder::styling};
 use colored::Colorize;
 use crossbeam_channel::{Receiver, Select, Sender, unbounded};
 //use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
@@ -28,6 +28,12 @@ pub mod term_events;
 pub mod tui;
 use tui::Output;
 
+const STYLES: styling::Styles = styling::Styles::styled()
+    .header(styling::AnsiColor::Green.on_default().bold())
+    .usage(styling::AnsiColor::Green.on_default().bold())
+    .literal(styling::AnsiColor::Blue.on_default().bold())
+    .placeholder(styling::AnsiColor::Cyan.on_default());
+
 fn main() {
     // Disable user input directly in the console
     //enable_raw_mode().expect("Could not enable raw mode");
@@ -45,7 +51,8 @@ fn main() {
 }
 
 fn run() -> Result<()> {
-    let mut args = Args::parse();
+    let mut matches = Args::command().styles(STYLES).term_width(80).get_matches();
+    let mut args = Args::from_arg_matches_mut(&mut matches)?;
     args.validate()?;
     let args = args;
 
@@ -153,15 +160,17 @@ fn register_watch_for_file(
         p.parent().expect("Could not find parent dir for p").to_path_buf()
     };
 
-    // println!("Registering a {:?} watch for {:?}", watch_mode, watch_target.as_path());
-    watcher.watch(watch_target.as_path(), watch_mode).unwrap();
+    // eprintln!("Registering a {:?} watch for {:?}", watch_mode,
+    watcher
+        .watch(watch_target.as_path(), watch_mode)
+        .map_err(|e| runtime_error!(FileWatchError, e.to_string()))?;
 
     Ok(p)
 }
 
 /// Gets the recommended watcher using the Sender
 fn get_watcher(tx: Sender<Event>, args: &Args) -> Box<dyn Watcher> {
-    if RecommendedWatcher::kind() == WatcherKind::PollWatcher {
+    if args.force_poll || RecommendedWatcher::kind() == WatcherKind::PollWatcher {
         let config =
             Config::default().with_poll_interval(Duration::from_millis(args.poll_interval));
         Box::new(

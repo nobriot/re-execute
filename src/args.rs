@@ -71,6 +71,11 @@ Placeholders:
     #[arg(short, long)]
     pub quiet: bool,
 
+    /// Force polling to get file events.
+    /// Use this if the command does not receive any file updates.
+    #[arg(long)]
+    pub force_poll: bool,
+
     /// Include hidden files and directories in updated files
     #[arg(long, short = 'H')]
     pub hidden: bool,
