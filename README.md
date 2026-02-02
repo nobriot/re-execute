@@ -7,7 +7,13 @@ Execute commands automatically when files are updated.
 ## Installation 
 
 You will need [cargo](https://doc.rust-lang.org/cargo/getting-started/installation.html)
-installed. Then install using:
+installed. Make sure you have nightly installed.
+
+```console
+rustup update nightly  
+```
+
+Then install using:
 
 ```console
 cargo install --git https://github.com/nobriot/re-execute.git
