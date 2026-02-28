@@ -88,17 +88,12 @@ A non-exhaustive list of parameters for the program:
 * `-e` / `--extension`:  Specify extensions to allow. Will ignore other extensions. e.g. `-e md -e ""` for .md and extension-less files
 * `-E` / `--env`:   Set an env variable for the command, e.g. `--env FOO=bar`
 * `-r` / `--regex`:   Add a regex to match filenames with. e.g. `-r '^[a-z0-9A-Z]*$'` will only match filenames with alphanumerical characters. Note that if a file watch in in `a/path` and the updated file ia `a/path/a/file`, then the second part will be evaluated against the regex, i.e. `a/file`
-* `-R` / `--ignored_regex`: Add a regex that filenames with. e.g. `-r '^[a-z0-9A-Z]*$'` will only match filenames with alphanumerical characters. Note that if a file watch in in `a/path` and the updated file ia `a/path/a/file`, then the second part will be evaluated against the regex, i.e. `a/file`
+* `-R` / `--ignored_regex`: Add a regex that if matches, filenames will be ignored.
 * `-t` / `--time`:    Print the time of execution of each command
 * `-H` / `--hidden`: Include hidden files in the triggers
 * `-d` / `--deleted`: Call the commands also with files that have been deleted
 * `-a` / `--abort-previous`: Abort previous ongoing command execution when files are updated while the program is running
 * `--force-poll`: Use polling to get files update events. May be necessary on some machines.
-
-## Exiting
-
-Once the program start, it's like [VIM](https://www.vim.org/), you never exit it 😉.
-You can press Q/q or Ctrl + C.
 
 ## Related tools
 
