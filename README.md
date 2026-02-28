@@ -98,10 +98,7 @@ A non-exhaustive list of parameters for the program:
 ## Exiting
 
 Once the program start, it's like [VIM](https://www.vim.org/), you never exit it 😉.
-
-Pressing Q/q and then Enter will work, but it's quirky.
-Else just press Ctrl+C.
-
+You can press Q/q or Ctrl + C.
 
 ## Related tools
 

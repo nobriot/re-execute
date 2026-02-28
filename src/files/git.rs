@@ -4,7 +4,6 @@ use std::path::{Path, PathBuf, absolute};
 
 pub fn is_git_ignored(filename: &PathBuf, watch: &PathBuf) -> bool {
     let abs_path = absolute(filename).unwrap_or(filename.clone());
-    //let all_rules = collect_ignore_rules(&abs_path, watch);
     let all_rules = GitIgnoreRules::from_dir(&abs_path, watch);
 
     // Check if a negative rule matches, if yes, it is not ignored, no matter
@@ -18,9 +17,6 @@ pub fn is_git_ignored(filename: &PathBuf, watch: &PathBuf) -> bool {
             if rule.file_matches(&abs_path, &ignore_path) {
                 return false;
             }
-            // if matches_rule(&abs_path, rule, &ignore_rules.rule_path) {
-            //     return false;
-            // }
         }
     }
 
@@ -32,11 +28,8 @@ pub fn is_git_ignored(filename: &PathBuf, watch: &PathBuf) -> bool {
                 continue;
             }
             if rule.file_matches(&abs_path, &ignore_path) {
-                return false;
+                return true;
             }
-            // if matches_rule(&abs_path, rule, &ignore_rules.rule_path) {
-            //     return true;
-            // }
         }
     }
 
@@ -196,9 +189,18 @@ impl GitIgnoreRule {
         D: AsRef<Path> + std::fmt::Debug,
     {
         // We take the part of the file that is relative to the dir
-        let candidate = match file.strip_prefix(dir) {
+        let stripped = match file.strip_prefix(dir) {
             Ok(path) => path.to_string_lossy(),
             Err(_) => return false,
+        };
+        // strip_prefix normalizes away trailing slashes; preserve them from
+        // the original path so patterns like **/cache/** can distinguish
+        // directories from files.
+        let file_str = file.to_string_lossy();
+        let candidate = if file_str.ends_with('/') && !stripped.ends_with('/') {
+            std::borrow::Cow::Owned(format!("{stripped}/"))
+        } else {
+            stripped
         };
 
         if self.match_all_levels {
@@ -402,7 +404,7 @@ impl GitIgnoreRules {
             eprintln!("Error reading contents of {path:?}");
         }
 
-        Self { rules, rule_path: path.to_path_buf() }
+        Self { rules, rule_path: path.parent().unwrap_or(path).to_path_buf() }
     }
 
     /// Starts collecting GitIgnoreRules from the path, going up to the watch directory
@@ -477,6 +479,7 @@ mod tests {
     #[test]
     fn test_file_matches() {
         // .gitignore file to check against a path
+        //
         let dir = tempdir().unwrap();
         let dir = dir.path();
         let ignore_file_path = dir.join(".gitignore");
@@ -690,9 +693,23 @@ mod tests {
         assert!(rules.rules[2].file_matches(dir.join("temp/file.txt").as_path(), &dir));
         assert!(rules.rules[3].file_matches(dir.join("foo/cache/bar").as_path(), &dir));
         assert!(rules.rules[3].file_matches(dir.join("foo/cache/bar/baz").as_path(), &dir));
-        // FIXME: I guess in theory the following test should work.
-        // Though here we do not care much about directories, files updates are only for files
-        // assert!(rules.rules[3].file_matches(dir.join("foo/cache/").as_path(), &dir));
+        assert!(rules.rules[3].file_matches(dir.join("foo/cache/").as_path(), &dir));
         assert!(!rules.rules[3].file_matches(dir.join("foo/cache").as_path(), &dir));
+    }
+
+    #[test]
+    fn test_starting_slash() {
+        let dir = tempdir().unwrap();
+        let dir = dir.path();
+        let ignore_file_path = dir.join(".gitignore");
+
+        let mut file = File::create(&ignore_file_path).unwrap();
+        writeln!(file, "/target").unwrap();
+
+        let rules = GitIgnoreRules::from_ignore_file(&ignore_file_path);
+
+        // Test ignored files
+        assert!(rules.rules[0].file_matches(dir.join("target/error.log").as_path(), &dir));
+        assert!(rules.rules[0].file_matches(dir.join("target").as_path(), &dir));
     }
 }

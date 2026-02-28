@@ -2,7 +2,6 @@ use anyhow::Result;
 use clap::{CommandFactory, FromArgMatches, builder::styling};
 use colored::Colorize;
 use crossbeam_channel::{Receiver, Select, Sender, unbounded};
-//use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use notify::*;
 use std::path::{PathBuf, absolute};
 use std::time::Duration;
@@ -27,6 +26,7 @@ use command::QueueMessage;
 pub mod term_events;
 pub mod tui;
 use tui::Output;
+use tui::RawModeGuard;
 
 const STYLES: styling::Styles = styling::Styles::styled()
     .header(styling::AnsiColor::Green.on_default().bold())
@@ -35,11 +35,9 @@ const STYLES: styling::Styles = styling::Styles::styled()
     .placeholder(styling::AnsiColor::Cyan.on_default());
 
 fn main() {
-    // Disable user input directly in the console
-    //enable_raw_mode().expect("Could not enable raw mode");
-    //set_echo(false);
+    let _raw_mode = RawModeGuard::new().expect("Could not enable raw mode");
     let result = run();
-    //disable_raw_mode().expect("Could not disable raw mode");
+    drop(_raw_mode);
 
     match result {
         Ok(_) => {}
@@ -117,14 +115,15 @@ fn run() -> Result<()> {
             Ok(Event::Exec(update)) => output.update(update),
             Ok(Event::Term(TermEvents::Quit)) => {
                 let _ = command_queue_tx.send(QueueMessage::Abort);
-                output.println("Quitting...");
                 output.finish();
                 return Ok(());
             }
             Ok(Event::Term(TermEvents::Resize(..))) => {
                 output.redraw();
             }
-            //Ok(Event::Key(_)) => {}
+            Ok(Event::Term(TermEvents::ClearScreen)) => {
+                output.clear_output();
+            }
             Err(e) => {
                 return Err(runtime_error!(ChannelReceiveError, e.to_string()).into());
             }
