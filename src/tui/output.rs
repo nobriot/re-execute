@@ -303,7 +303,7 @@ impl Output {
     /// Style for finished progress bars
     fn progress_bar_finished_style() -> ProgressStyle {
         ProgressStyle::default_spinner()
-            .template(format!("{{prefix}} {{wide_msg}} {}", "[{elapsed}]".blue()).as_str())
+            .template(format!("{{prefix}} {{wide_msg}} {}", "[{elapsed}] ".blue()).as_str())
             .expect("no finished template error")
     }
 
