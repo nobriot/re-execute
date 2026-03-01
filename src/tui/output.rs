@@ -43,6 +43,8 @@ pub struct Output {
     output_lines: VecDeque<String>,
     /// Footer help bar showing keyboard shortcuts
     help_bar: Option<ProgressBar>,
+    /// Indication if the program is paused or not
+    paused: bool,
 }
 
 impl Output {
@@ -63,6 +65,7 @@ impl Output {
             file_str: if args.batch_exec { "files" } else { "file" },
             output_lines: VecDeque::with_capacity(MAX_CACHED_OUTPUT_LINES),
             help_bar: None,
+            paused: false,
         };
 
         output.generate_title();
@@ -92,7 +95,7 @@ impl Output {
     pub fn generate_title(&mut self) {
         let pb = self.multi.insert(0, ProgressBar::no_length());
         pb.set_style(Self::title_style());
-        pb.set_message(format!("{}\n{}", Self::separator_line(), self.title));
+        pb.set_message(format!("{}\n{}", Self::separator_line(None), self.title));
         pb.finish();
         let cache = CommandCache { progress_bar: pb, file_list: String::from(""), time: None };
         self.cache.insert(0, cache);
@@ -100,12 +103,16 @@ impl Output {
 
     /// Adds the help bar at the bottom of the MultiProgress
     fn add_help_bar(&mut self) {
-        let separator = Self::separator_line();
+        let separator = Self::separator_line(None);
+        let pause_or_resume = if self.paused { "resume" } else { "pause" };
         let help_text = format!(
-            "  {} quit  {}  {} clear",
+            "  {} quit  {}  {} clear  {}  {} {}",
             "q/Ctrl-c".cyan().bold(),
             "·".bright_black(),
             "Ctrl-l".cyan().bold(),
+            "·".bright_black(),
+            "k".cyan().bold(),
+            pause_or_resume,
         );
         let pb = self.multi.add(ProgressBar::no_length());
         pb.set_style(
@@ -125,9 +132,26 @@ impl Output {
     }
 
     /// Returns a separator line of ─ characters spanning the terminal width
-    fn separator_line() -> String {
-        let width = terminal::size().map(|(c, _)| c as usize).unwrap_or(80);
-        "─".repeat(width).cyan().to_string()
+    /// With an optional message at the beginning of the separator
+    fn separator_line(message: Option<&str>) -> String {
+        let term_width = terminal::size().map(|(c, _)| c as usize).unwrap_or(80);
+        if let Some(m) = message {
+            let message_width = unicode_width::UnicodeWidthStr::width(m);
+            if term_width < message_width + 1 {
+                // Message does not fit - we just skip it.
+                "─".repeat(term_width).cyan().to_string()
+            } else {
+                // formats in cyan ─message───────
+                format!(
+                    "{}{}{}",
+                    "─".cyan(),
+                    m.cyan(),
+                    "─".repeat(term_width - message_width - 1).cyan()
+                )
+            }
+        } else {
+            "─".repeat(term_width).cyan().to_string()
+        }
     }
 
     /// Checks the index of the last progress bar and remove old
@@ -156,6 +180,12 @@ impl Output {
     /// Clears the cached output lines and redraws the screen
     pub fn clear_output(&mut self) {
         self.output_lines.clear();
+        self.redraw();
+    }
+
+    /// Tells the output if the program is currently paused or not
+    pub fn set_pause(&mut self, paused: bool) {
+        self.paused = paused;
         self.redraw();
     }
 
@@ -190,7 +220,8 @@ impl Output {
             let pb = if index == 0 {
                 let pb = self.multi.insert(0, ProgressBar::no_length());
                 pb.set_style(Self::title_style());
-                pb.set_message(format!("{}\n{}", Self::separator_line(), self.title));
+                let message = if self.paused { Some("paused") } else { None };
+                pb.set_message(format!("{}\n{}", Self::separator_line(message), self.title));
                 pb.finish();
                 pb
             } else {

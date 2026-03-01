@@ -9,4 +9,6 @@ pub enum QueueMessage {
     /// Insert an update of a file.
     /// First PathBuf is the updated file / Second is the top level watch
     AddFile(PathBuf, PathBuf),
+    /// Clears the queue
+    Clear,
 }

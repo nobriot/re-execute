@@ -86,6 +86,7 @@ fn run() -> Result<()> {
     select.recv(&event_rx);
     rxs.push(&event_rx);
     let rxs = rxs;
+    let mut paused = false;
 
     // Event loop
     loop {
@@ -94,24 +95,31 @@ fn run() -> Result<()> {
         let rx = rxs[index];
 
         match operation.recv(rx) {
-            Ok(Event::FileWatch(file_watch)) => match file_watch {
-                Ok(event) => match event.kind {
-                    EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_) => {
-                        let (_, watch) = &rx_with_path[index];
-                        for p in &event.paths {
-                            if should_be_ignored(p, &args, watch) {
-                                continue;
-                            }
+            Ok(Event::FileWatch(file_watch)) => {
+                // if the program is paused, ignore file updates
+                if paused {
+                    continue;
+                }
+                match file_watch {
+                    Ok(event) => match event.kind {
+                        EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_) => {
+                            let (_, watch) = &rx_with_path[index];
+                            for p in &event.paths {
+                                if should_be_ignored(p, &args, watch) {
+                                    continue;
+                                }
 
-                            command_queue_tx
-                                .send(QueueMessage::AddFile(p.clone(), watch.clone()))?;
+                                command_queue_tx
+                                    .send(QueueMessage::AddFile(p.clone(), watch.clone()))?;
+                            }
                         }
+                        _ => {}
+                    },
+                    Err(error) => {
+                        return Err(runtime_error!(FileWatchError, error.to_string()).into());
                     }
-                    _ => {}
-                },
-                Err(error) => return Err(runtime_error!(FileWatchError, error.to_string()).into()),
-                //_ => {}
-            },
+                }
+            }
             Ok(Event::Exec(update)) => output.update(update),
             Ok(Event::Term(TermEvents::Quit)) => {
                 let _ = command_queue_tx.send(QueueMessage::Abort);
@@ -123,6 +131,10 @@ fn run() -> Result<()> {
             }
             Ok(Event::Term(TermEvents::ClearScreen)) => {
                 output.clear_output();
+            }
+            Ok(Event::TogglePause) => {
+                paused = !paused;
+                output.set_pause(paused);
             }
             Err(e) => {
                 return Err(runtime_error!(ChannelReceiveError, e.to_string()).into());

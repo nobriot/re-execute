@@ -10,4 +10,6 @@ pub enum Event {
     Exec(ExecMessage),
     // A notification from a terminal event
     Term(TermEvents),
+    // User wishes to pause/resume the program
+    TogglePause,
 }

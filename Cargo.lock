@@ -604,6 +604,7 @@ dependencies = [
  "shell-words",
  "tempfile",
  "thiserror",
+ "unicode-width",
 ]
 
 [[package]]

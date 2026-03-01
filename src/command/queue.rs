@@ -163,6 +163,11 @@ impl Queue {
                     let _ = self.files.insert((p, watch));
                     self.last_update = Some(std::time::Instant::now());
                 }
+                Ok(QueueMessage::Clear) => {
+                    self.abort_ongoing_commands_if_needed();
+                    self.files.clear();
+                    self.last_update = None;
+                }
                 Err(RecvTimeoutError::Timeout) => {}
                 Err(e) => {
                     eprintln!("Channel error: {e:?}");
@@ -190,6 +195,17 @@ impl Queue {
         }
     }
 
+    pub fn abort_ongoing_commands_if_needed(&mut self) {
+        // Abort previous commands if needed
+        if self.abort_previous && !self.workers.is_empty() {
+            self.abort.store(true, Ordering::SeqCst);
+            // We could probably use a rendezvous channel or something like that to make
+            // sure the other threads have read the value.
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        self.abort.store(false, Ordering::SeqCst);
+    }
+
     /// Picks up the next file-batch and spawn a thread executing the
     /// command
     pub fn execute(&mut self) -> Result<(), ProgramError> {
@@ -209,14 +225,7 @@ impl Queue {
             return Ok(());
         }
 
-        // Abort previous commands if needed
-        if self.abort_previous && !self.workers.is_empty() {
-            self.abort.store(true, Ordering::SeqCst);
-            // We could probably use a rendezvous channel or something like that to make
-            // sure the other threads have read the value.
-            std::thread::sleep(Duration::from_millis(100));
-        }
-        self.abort.store(false, Ordering::SeqCst);
+        self.abort_ongoing_commands_if_needed();
 
         // Choose arguments based on the placeholders
         let p: Vec<PathBuf> = if !self.batch_exec {
