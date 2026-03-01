@@ -180,6 +180,7 @@ impl Queue {
             // See if we want to execute something
             if let Some(t) = self.last_update
                 && t.elapsed() > std::time::Duration::from_millis(200)
+                && self.workers.len() < self.workers.capacity()
             {
                 let tx_result = self.execute();
 
