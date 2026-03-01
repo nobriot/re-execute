@@ -7,11 +7,8 @@ use colored::Colorize;
 use crossterm::{ExecutableCommand, cursor, terminal};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::collections::{HashMap, VecDeque};
-use std::time::Duration;
 
-// static PROGRAM_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub static PROGRAM_NAME: &str = env!("CARGO_PKG_NAME");
-const DEFAULT_TICK_DURATION_MS: u64 = 100;
 // const TICK_STRINGS: [&str; 8] = ["⢹", "⢺", "⢼", "⣸", "⣇", "⡧", "⡗", "⡏"];
 const TICK_CHARS: &str = "⣼⣹⢻⠿⡟⣏⣧⣶ ";
 const NUMBER_OF_PB_ON_SCREEN: usize = 5;
@@ -41,6 +38,8 @@ pub struct Output {
     file_str: &'static str,
     /// Ring buffer of recent stdout/stderr lines for redraw
     output_lines: VecDeque<String>,
+    /// Pending output lines awaiting a flush render cycle
+    pending_output: Vec<String>,
     /// Footer help bar showing keyboard shortcuts
     help_bar: Option<ProgressBar>,
     /// Indication if the program is paused or not
@@ -64,6 +63,7 @@ impl Output {
             time: args.time,
             file_str: if args.batch_exec { "files" } else { "file" },
             output_lines: VecDeque::with_capacity(MAX_CACHED_OUTPUT_LINES),
+            pending_output: Vec::new(),
             help_bar: None,
             paused: false,
         };
@@ -74,21 +74,61 @@ impl Output {
         output
     }
 
-    /// Prints a line at the top of the bars and caches it for redraw
+    /// Caches an output line for redraw and queues it for the next flush.
+    /// Does not render immediately — call flush_output() to render.
     pub fn println<I>(&mut self, message: I)
     where
         I: AsRef<str>,
     {
+        let s = message.as_ref().to_string();
         if self.output_lines.len() >= MAX_CACHED_OUTPUT_LINES {
             self.output_lines.pop_front();
         }
-        self.output_lines.push_back(message.as_ref().to_string());
+        self.output_lines.push_back(s.clone());
+        self.pending_output.push(s);
+    }
 
-        let result = self.multi.println(message);
-
-        if let Err(e) = result {
-            eprintln!("Error printing title: {e:?}");
+    /// Advances every active spinner by one frame.
+    /// Called from the main-thread 100 ms timer so there is no background
+    /// draw thread competing with our rendering.
+    pub fn tick_spinners(&mut self) {
+        for cache in self.cache.values() {
+            if !cache.progress_bar.is_finished() {
+                cache.progress_bar.tick();
+            }
         }
+    }
+
+    /// Flushes all buffered output lines to the terminal.
+    /// Each line is printed with a separate multi.println() call so that
+    /// indicatif can correctly track cursor position (it assumes one line per
+    /// call; passing embedded newlines breaks its cursor-up calculation and
+    /// causes output to overwrite the progress-bar area).
+    /// Printing is limited to lines that fit above the UI.
+    pub fn flush_output(&mut self) {
+        if self.pending_output.is_empty() {
+            return;
+        }
+        let available = self.available_output_lines();
+        let lines = std::mem::take(&mut self.pending_output);
+        // Only print the most-recent lines that fit above the UI.
+        let start = lines.len().saturating_sub(available);
+        for line in &lines[start..] {
+            let _ = self.multi.println(line);
+        }
+    }
+
+    /// Returns how many lines of child-process output can be displayed without
+    /// overflowing into the title / progress-bar area.
+    fn available_output_lines(&self) -> usize {
+        let term_height = terminal::size().map(|(_, r)| r as usize).unwrap_or(24);
+        // title area  : blank line + separator + title       = 3 lines
+        // progress bars: up to NUMBER_OF_PB_ON_SCREEN bars   = 0..5 lines
+        // help bar     : separator + help text               = 2 lines
+        // buffer       : breathing room                      = 2 lines
+        let bar_count = (self.cache.len().saturating_sub(1)).min(NUMBER_OF_PB_ON_SCREEN);
+        let ui_lines = 3 + bar_count + 2 + 2;
+        term_height.saturating_sub(ui_lines)
     }
 
     /// Prints the top level title with a separator line above it
@@ -180,6 +220,7 @@ impl Output {
     /// Clears the cached output lines and redraws the screen
     pub fn clear_output(&mut self) {
         self.output_lines.clear();
+        self.pending_output.clear();
         self.redraw();
     }
 
@@ -202,10 +243,16 @@ impl Output {
 
         self.multi = MultiProgress::new();
 
-        // Replay cached output lines
-        for line in &self.output_lines {
+        // Replay the most-recent output lines that fit above the UI.
+        let available = self.available_output_lines();
+        let skip = self.output_lines.len().saturating_sub(available);
+        // Use one multi.println() per line so indicatif cursor tracking stays
+        // correct (it assumes single-line messages for its cursor arithmetic).
+        for line in self.output_lines.iter().skip(skip) {
             let _ = self.multi.println(line);
         }
+        // All output_lines are now rendered; clear pending to avoid double-print.
+        self.pending_output.clear();
 
         let mut indices: Vec<usize> = self.cache.keys().cloned().collect();
         indices.sort_unstable();
@@ -230,7 +277,7 @@ impl Output {
                     pb.set_style(Self::progress_bar_finished_style());
                 } else {
                     pb.set_style(Self::progress_bar_style());
-                    pb.enable_steady_tick(Duration::from_millis(DEFAULT_TICK_DURATION_MS));
+                    // No enable_steady_tick; tick_spinners() drives animation.
                 }
                 pb.set_prefix(old_prefix);
                 pb.set_message(format!("{}: {}", self.file_str.bold(), file_list));
@@ -265,7 +312,9 @@ impl Output {
                 };
                 pb.set_prefix(prefix.bright_black().to_string());
                 pb.set_message(format!("{}: {}", self.file_str.bold(), files));
-                pb.enable_steady_tick(Duration::from_millis(DEFAULT_TICK_DURATION_MS));
+                // Do NOT call enable_steady_tick — that spawns a background draw thread
+                // which races with our main-thread rendering.  Spinners are advanced
+                // manually by tick_spinners() from the 100 ms flush timer.
 
                 let c = CommandCache { progress_bar: pb, file_list: files, time };
                 self.cache.insert(index, c);

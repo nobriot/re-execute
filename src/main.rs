@@ -1,7 +1,7 @@
 use anyhow::Result;
 use clap::{CommandFactory, FromArgMatches, builder::styling};
 use colored::Colorize;
-use crossbeam_channel::{Receiver, Select, Sender, unbounded};
+use crossbeam_channel::{Receiver, Select, Sender, tick, unbounded};
 use notify::*;
 use std::path::{PathBuf, absolute};
 use std::time::Duration;
@@ -85,6 +85,12 @@ fn run() -> Result<()> {
     }
     select.recv(&event_rx);
     rxs.push(&event_rx);
+
+    // Ticker that fires every 100 ms to flush buffered output in one render cycle.
+    let flush_tick = tick(Duration::from_millis(100));
+    select.recv(&flush_tick);
+    let flush_tick_index = rxs.len(); // index of the tick receiver in the select
+
     let rxs = rxs;
     let mut paused = false;
 
@@ -92,6 +98,15 @@ fn run() -> Result<()> {
     loop {
         let operation = select.select();
         let index = operation.index();
+
+        // Handle the flush tick separately (different channel type).
+        if index == flush_tick_index {
+            let _ = operation.recv(&flush_tick);
+            output.tick_spinners();
+            output.flush_output();
+            continue;
+        }
+
         let rx = rxs[index];
 
         match operation.recv(rx) {
