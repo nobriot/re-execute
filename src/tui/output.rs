@@ -5,7 +5,7 @@ use crate::{
 use chrono::Local;
 use colored::Colorize;
 use crossterm::{ExecutableCommand, cursor, terminal};
-use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use indicatif::{MultiProgress, ProgressBar, ProgressDrawTarget, ProgressStyle};
 use std::collections::{HashMap, VecDeque};
 
 pub static PROGRAM_NAME: &str = env!("CARGO_PKG_NAME");
@@ -99,12 +99,10 @@ impl Output {
         }
     }
 
-    /// Flushes all buffered output lines to the terminal.
-    /// Each line is printed with a separate multi.println() call so that
-    /// indicatif can correctly track cursor position (it assumes one line per
-    /// call; passing embedded newlines breaks its cursor-up calculation and
-    /// causes output to overwrite the progress-bar area).
-    /// Printing is limited to lines that fit above the UI.
+    /// Flushes all buffered output lines to the terminal in a single render cycle.
+    /// Uses suspend() so all pending lines are printed inside one
+    /// clear-bars → print-all → redraw-bars pass, instead of one full redraw per
+    /// line (which caused visible bar jumping at high output volumes).
     pub fn flush_output(&mut self) {
         if self.pending_output.is_empty() {
             return;
@@ -113,9 +111,11 @@ impl Output {
         let lines = std::mem::take(&mut self.pending_output);
         // Only print the most-recent lines that fit above the UI.
         let start = lines.len().saturating_sub(available);
-        for line in &lines[start..] {
-            let _ = self.multi.println(line);
-        }
+        self.multi.suspend(|| {
+            for line in &lines[start..] {
+                println!("{}", line);
+            }
+        });
     }
 
     /// Returns how many lines of child-process output can be displayed without
@@ -234,6 +234,20 @@ impl Output {
     /// Clears the progress bar area (plus a buffer for wrapped lines),
     /// replays cached stdout, then recreates bars at the new width.
     pub fn redraw(&mut self) {
+        // Disconnect all existing bars from the old MultiProgress before replacing
+        // it.  Active (non-finished) ProgressBars call abandon() on Drop, which
+        // triggers a draw on the old multi.  After we replace self.multi and clear
+        // the screen, those Drop-triggered draws write a ghost render of the
+        // title/separator to stdout — the visible "duplicate separator" bug.
+        // Setting the draw target to hidden removes each bar from the old multi's
+        // tracking list and redirects any future draws to a no-op sink.
+        for cache in self.cache.values() {
+            cache.progress_bar.set_draw_target(ProgressDrawTarget::hidden());
+        }
+        if let Some(ref hb) = self.help_bar {
+            hb.set_draw_target(ProgressDrawTarget::hidden());
+        }
+
         let _ = self.multi.clear();
 
         // Move cursor to top-left and clear the entire visible terminal.
