@@ -54,6 +54,9 @@ pub enum RuntimeError {
 
 #[derive(Error, Debug)]
 pub enum ArgumentError {
+    #[error("Failed to parse arguments: {0}")]
+    ArgumentsParseError(String),
+
     #[error("Failed to parse command: {0} - {1}")]
     CommandParseError(String, String),
 

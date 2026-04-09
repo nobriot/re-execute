@@ -1,5 +1,5 @@
 use crate::errors::{ArgumentError, ProgramError, arg_error};
-use clap::Parser;
+use clap::{CommandFactory, FromArgMatches, Parser, builder::styling};
 use regex::Regex;
 
 /// Use this placeholder to substitute individual updated files in the command
@@ -12,6 +12,12 @@ pub const DEFAULT_SHELL: &str = "sh -c";
 
 #[cfg(windows)]
 pub const DEFAULT_SHELL: &str = "cmd.exe /c";
+
+const STYLES: styling::Styles = styling::Styles::styled()
+    .header(styling::AnsiColor::Green.on_default().bold())
+    .usage(styling::AnsiColor::Green.on_default().bold())
+    .literal(styling::AnsiColor::Blue.on_default().bold())
+    .placeholder(styling::AnsiColor::Cyan.on_default());
 
 #[derive(Parser, Debug)]
 #[command(name = env!("CARGO_PKG_NAME"), max_term_width = 80)]
@@ -112,6 +118,14 @@ Placeholders:
 }
 
 impl Args {
+    pub fn try_parse() -> Result<Self, ProgramError> {
+        let mut matches = Args::command().styles(STYLES).term_width(80).get_matches();
+        let args = Args::from_arg_matches_mut(&mut matches)
+            .map_err(|e| arg_error!(ArgumentsParseError, e.to_string()))?;
+
+        Ok(args)
+    }
+
     pub fn validate(&mut self) -> Result<(), ProgramError> {
         // Validate regexps
         for r in &self.regex {

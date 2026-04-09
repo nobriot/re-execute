@@ -1,5 +1,4 @@
 use anyhow::Result;
-use clap::{CommandFactory, FromArgMatches, builder::styling};
 use colored::Colorize;
 use crossbeam_channel::{Receiver, Select, Sender, tick, unbounded};
 use notify::*;
@@ -28,12 +27,6 @@ pub mod tui;
 use tui::Output;
 use tui::RawModeGuard;
 
-const STYLES: styling::Styles = styling::Styles::styled()
-    .header(styling::AnsiColor::Green.on_default().bold())
-    .usage(styling::AnsiColor::Green.on_default().bold())
-    .literal(styling::AnsiColor::Blue.on_default().bold())
-    .placeholder(styling::AnsiColor::Cyan.on_default());
-
 fn main() {
     let _raw_mode = RawModeGuard::new().expect("Could not enable raw mode");
     let result = run();
@@ -49,8 +42,7 @@ fn main() {
 }
 
 fn run() -> Result<()> {
-    let mut matches = Args::command().styles(STYLES).term_width(80).get_matches();
-    let mut args = Args::from_arg_matches_mut(&mut matches)?;
+    let mut args = Args::try_parse()?;
     args.validate()?;
     let args = args;
 
