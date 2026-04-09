@@ -99,10 +99,10 @@ impl Output {
         }
     }
 
-    /// Flushes all buffered output lines to the terminal in a single render cycle.
-    /// Uses suspend() so all pending lines are printed inside one
-    /// clear-bars → print-all → redraw-bars pass, instead of one full redraw per
-    /// line (which caused visible bar jumping at high output volumes).
+    /// Flushes all buffered output lines to the terminal in a single render
+    /// cycle. Uses suspend() so all pending lines are printed inside one
+    /// clear-bars → print-all → redraw-bars pass, instead of one full redraw
+    /// per line (which caused visible bar jumping at high output volumes).
     pub fn flush_output(&mut self) {
         if self.pending_output.is_empty() {
             return;
