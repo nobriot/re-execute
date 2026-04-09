@@ -36,7 +36,8 @@ macro_rules! send_msg_unchecked {
 pub struct Queue {
     /// Prepared command to which we need to add the args / env variables
     command_base: Command,
-    /// Command to execute, to pass to the shell (i.e. sh -c "command to execute with args")
+    /// Command to execute, to pass to the shell (i.e. sh -c "command to execute
+    /// with args")
     command: String,
     /// Files that have been updated - pending command execution
     /// First pathbuf is the file, second is the watched file/dir

@@ -29,11 +29,13 @@ dev:
     echo -e "$ok cargo $(cargo --version | awk '{print $2}')"
 
     # --- stable toolchain ---
-    if ! rustup toolchain list | grep -q '^stable'; then
-        echo -e "$info Installing stable toolchain..."
-        rustup toolchain install stable
-    fi
-    echo -e "$ok stable toolchain"
+    for toolchain in stable nightly; do
+        if ! rustup toolchain list | grep -q "^${toolchain}"; then
+            echo -e "$info Installing $toolchain toolchain..."
+            rustup toolchain install $toolchain
+        fi
+    done
+    echo -e "$ok $toolchain toolchain"
 
     # --- components: clippy, rustfmt, rust-analyzer, rust-src ---
     for comp in clippy rustfmt rust-analyzer rust-src; do
@@ -77,12 +79,12 @@ test:
 # Lint: clippy + format
 lint:
     cargo clippy --all-targets --all-features -- -D warnings
-    cargo fmt --all
+    cargo +nightly fmt --all
 
 # Check lint without modifying files
 lint-check:
     cargo clippy --all-targets --all-features -- -D warnings
-    cargo fmt --all -- --check --color always
+    cargo +nightly fmt --all -- --check --color always
 
 # Check dependencies with cargo-deny
 deny:

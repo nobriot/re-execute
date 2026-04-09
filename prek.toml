@@ -7,7 +7,7 @@ repo = "local"
 id = "cargo-fmt"
 name = "cargo fmt"
 language = "system"
-entry = "cargo fmt --all"
+entry = "cargo +nightly fmt --all"
 pass_filenames = false
 types = ["rust"]
 

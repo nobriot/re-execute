@@ -21,7 +21,6 @@ macro_rules! is_ok_or_return {
 }
 
 /// Checks if a file update should be ignored
-///
 pub fn should_be_ignored(filename: &PathBuf, args: &Args, watch: &PathBuf) -> bool {
     if !extension_matches(filename, args.extensions.as_slice()) {
         log::debug!("Ignoring {:?}: extension not in allow list", filename);
@@ -110,8 +109,8 @@ pub fn has_all_regex_match(regex: &[Regex], filename: &Path, watch: &PathBuf) ->
     true
 }
 
-/// Checks if the filename relative to its watch matches any of the passed regexps
-/// returns false if no regexps are passed.
+/// Checks if the filename relative to its watch matches any of the passed
+/// regexps returns false if no regexps are passed.
 pub fn has_any_regex_match(regex: &[Regex], filename: &Path, watch: &PathBuf) -> bool {
     if regex.is_empty() {
         return false;
