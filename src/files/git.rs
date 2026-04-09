@@ -15,6 +15,12 @@ pub fn is_git_ignored(filename: &PathBuf, watch: &PathBuf) -> bool {
                 continue;
             }
             if rule.file_matches(&abs_path, &ignore_path) {
+                log::debug!(
+                    "gitignore: {:?} re-included by negated rule '{}' in {:?}",
+                    filename,
+                    rule.raw,
+                    ignore_path
+                );
                 return false;
             }
         }
@@ -28,6 +34,12 @@ pub fn is_git_ignored(filename: &PathBuf, watch: &PathBuf) -> bool {
                 continue;
             }
             if rule.file_matches(&abs_path, &ignore_path) {
+                log::debug!(
+                    "gitignore: {:?} ignored by rule '{}' in {:?}",
+                    filename,
+                    rule.raw,
+                    ignore_path
+                );
                 return true;
             }
         }
@@ -79,6 +91,8 @@ enum GitIgnoreRuleElements {
 
 #[derive(Debug)]
 struct GitIgnoreRule {
+    /// Original pattern string
+    raw: String,
     /// Pattern
     pattern: Vec<GitIgnoreRuleElements>,
     /// Is the pattern negated
@@ -93,6 +107,7 @@ impl GitIgnoreRule {
     /// Creates a GitIgnoreRule from a line
     fn from_str<S: AsRef<str>>(line: S) -> Option<Self> {
         let mut pattern = Vec::new();
+        let raw = line.as_ref().to_string();
         let line: &str = line.as_ref();
 
         if line.is_empty() || line.starts_with("#") {
@@ -180,7 +195,7 @@ impl GitIgnoreRule {
             }
         }
 
-        Some(GitIgnoreRule { pattern, is_negated, match_all_levels, dirs_only })
+        Some(GitIgnoreRule { raw, pattern, is_negated, match_all_levels, dirs_only })
     }
 
     /// Checks if the current git ignore rule matches a file within a dir
@@ -401,7 +416,7 @@ impl GitIgnoreRules {
                 }
             }
         } else {
-            eprintln!("Error reading contents of {path:?}");
+            log::warn!("Error reading contents of {path:?}");
         }
 
         Self { rules, rule_path: path.parent().unwrap_or(path).to_path_buf() }

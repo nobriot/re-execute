@@ -1,6 +1,7 @@
 use crate::errors::{ArgumentError, ProgramError, arg_error};
 use clap::{CommandFactory, FromArgMatches, Parser, builder::styling};
 use regex::Regex;
+use std::path::PathBuf;
 
 /// Use this placeholder to substitute individual updated files in the command
 pub static FILE_SUBSTITUTION: &str = "{file}";
@@ -93,6 +94,10 @@ Placeholders:
     /// Invoke the command also when files are deleted and no longer exist
     #[arg(short, long)]
     pub deleted: bool,
+
+    /// Append log output to a file (in addition to stderr)
+    #[arg(long, value_name = "PATH")]
+    pub log_file: Option<PathBuf>,
 
     /// Indicates if we abort previous ongoing commands
     /// Happens only by default if no substitution is specified

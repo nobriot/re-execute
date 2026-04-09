@@ -22,6 +22,7 @@ pub mod command;
 use command::Queue;
 use command::QueueMessage;
 
+pub mod logging;
 pub mod term_events;
 pub mod tui;
 use tui::Output;
@@ -45,6 +46,10 @@ fn run() -> Result<()> {
     let mut args = Args::try_parse()?;
     args.validate()?;
     let args = args;
+
+    logging::setup(args.log_file.as_deref());
+    log::info!("Starting {} v{}", tui::PROGRAM_NAME, env!("CARGO_PKG_VERSION"));
+    log::debug!("Parsed arguments: {:?}", args);
 
     let mut file_watchers: Vec<Box<dyn Watcher>> = Vec::new();
     let mut rx_with_path: Vec<(Receiver<Event>, PathBuf)> = Vec::new();
@@ -116,6 +121,7 @@ fn run() -> Result<()> {
                                     continue;
                                 }
 
+                                log::debug!("File change accepted: {:?} ({:?})", p, event.kind);
                                 command_queue_tx
                                     .send(QueueMessage::AddFile(p.clone(), watch.clone()))?;
                             }
@@ -123,12 +129,14 @@ fn run() -> Result<()> {
                         _ => {}
                     },
                     Err(error) => {
+                        log::error!("File watch error: {}", error);
                         return Err(runtime_error!(FileWatchError, error.to_string()).into());
                     }
                 }
             }
             Ok(Event::Exec(update)) => output.update(update),
             Ok(Event::Term(TermEvents::Quit)) => {
+                log::info!("Quit signal received, shutting down");
                 let _ = command_queue_tx.send(QueueMessage::Abort);
                 output.finish();
                 return Ok(());
@@ -178,7 +186,7 @@ fn register_watch_for_file(
         p.parent().expect("Could not find parent dir for p").to_path_buf()
     };
 
-    // eprintln!("Registering a {:?} watch for {:?}", watch_mode,
+    log::info!("Watching {:?} ({:?})", watch_target.display(), watch_mode);
     watcher
         .watch(watch_target.as_path(), watch_mode)
         .map_err(|e| runtime_error!(FileWatchError, e.to_string()))?;
@@ -189,6 +197,7 @@ fn register_watch_for_file(
 /// Gets the recommended watcher using the Sender
 fn get_watcher(tx: Sender<Event>, args: &Args) -> Box<dyn Watcher> {
     if args.force_poll || RecommendedWatcher::kind() == WatcherKind::PollWatcher {
+        log::debug!("Using PollWatcher (interval: {}ms)", args.poll_interval);
         let config =
             Config::default().with_poll_interval(Duration::from_millis(args.poll_interval));
         Box::new(
@@ -201,6 +210,7 @@ fn get_watcher(tx: Sender<Event>, args: &Args) -> Box<dyn Watcher> {
             .unwrap(),
         )
     } else {
+        log::debug!("Using RecommendedWatcher ({:?})", RecommendedWatcher::kind());
         Box::new(
             RecommendedWatcher::new(
                 move |res| {

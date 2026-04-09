@@ -153,7 +153,10 @@ impl Queue {
         loop {
             // Receive messages
             match self.rx.recv_timeout(Duration::from_millis(100)) {
-                Ok(QueueMessage::Abort) => break,
+                Ok(QueueMessage::Abort) => {
+                    log::debug!("Command queue received abort");
+                    break;
+                }
                 Ok(QueueMessage::RestartBackoff) => {
                     if !self.files.is_empty() {
                         self.last_update = Some(std::time::Instant::now());
@@ -170,7 +173,7 @@ impl Queue {
                 }
                 Err(RecvTimeoutError::Timeout) => {}
                 Err(e) => {
-                    eprintln!("Channel error: {e:?}");
+                    log::error!("Channel error: {e:?}");
                     break;
                 }
             }
@@ -185,7 +188,7 @@ impl Queue {
                 let tx_result = self.execute();
 
                 if let Err(e) = tx_result {
-                    eprintln!("Exec Tx Report Channel error: {e:?}");
+                    log::error!("Exec Tx Report Channel error: {e:?}");
                     return;
                 }
 
@@ -260,6 +263,14 @@ impl Queue {
         // Queue house keeping.
         let command_number = self.command_count;
         self.command_count += 1;
+        log::info!(
+            "Executing command #{} for {} file(s): {:?}",
+            command_number + 1,
+            p.len(),
+            p.iter()
+                .map(|pb| pb.file_name().unwrap().to_string_lossy().into_owned())
+                .collect::<Vec<_>>()
+        );
         self.report_tx
             .send(Event::Exec(ExecMessage::Start(ExecStart {
                 command_number,

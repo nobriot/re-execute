@@ -24,21 +24,27 @@ macro_rules! is_ok_or_return {
 ///
 pub fn should_be_ignored(filename: &PathBuf, args: &Args, watch: &PathBuf) -> bool {
     if !extension_matches(filename, args.extensions.as_slice()) {
+        log::debug!("Ignoring {:?}: extension not in allow list", filename);
         return true;
     }
     if !args.deleted && !filename.exists() {
+        log::debug!("Ignoring {:?}: file deleted", filename);
         return true;
     }
     if !has_all_regex_match(&args.regexps, filename, watch) {
+        log::debug!("Ignoring {:?}: does not match required regex", filename);
         return true;
     }
     if has_any_regex_match(&args.ignored_regexps, filename, watch) {
+        log::debug!("Ignoring {:?}: matches ignored regex", filename);
         return true;
     }
     if !args.no_gitignore && is_git_ignored(filename, watch) {
+        log::debug!("Ignoring {:?}: matched gitignore rule", filename);
         return true;
     }
     if !args.hidden && is_hidden(filename, watch) {
+        log::debug!("Ignoring {:?}: hidden file", filename);
         return true;
     }
 
