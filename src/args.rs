@@ -95,7 +95,7 @@ Placeholders:
     #[arg(short, long)]
     pub deleted: bool,
 
-    /// Append log output to a file (in addition to stderr)
+    /// Append log output to a file
     #[arg(long, value_name = "PATH")]
     pub log_file: Option<PathBuf>,
 

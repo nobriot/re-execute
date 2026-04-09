@@ -97,3 +97,7 @@ release:
 # Run rex (pass arguments after --)
 run *args:
     cargo run -- {{args}}
+
+# Installs rex on this machine
+install:
+    cargo install --git https://github.com/nobriot/re-execute.git
