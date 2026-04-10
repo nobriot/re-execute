@@ -344,38 +344,32 @@ impl GitIgnoreRule {
                     return false;
                 }
                 GitIgnoreRuleElements::DoubleAsterisk => {
-                    // Try to match the rest, including accross directories
+                    // Try to match the rest, including across directories
                     if rule_elements.peek().is_none() {
-                        // No more rules, after the **, so it matches anything really.
+                        // No more rules after the **, so it matches anything.
                         return true;
                     }
-                    // Else pick up the remaining rules:
-                    // There is probably a better way than cloning here...
                     let remaining_rules: Vec<_> = rule_elements.cloned().collect();
-
-                    // Now try to fit the remainder of the string with the rules
-                    // TODO: There is probably some pruning possible here.
                     let file: String = p_chars.collect();
-                    if !file.contains('/') {
-                        // ** and we are trying anything that does not contain a slash.
-                        // We can conclude it's a match
-                        return true;
-                    }
 
-                    // Try ignoring the ** and match the rest first:
-                    let mut remainder = file.as_str();
-                    if self.string_matches(remainder, &remaining_rules) {
-                        return true;
-                    }
-
-                    // Else try stripping directories
-                    while let Some(i) = remainder.find('/') {
-                        remainder = &remainder[i..];
-                        if self.string_matches(remainder, &remaining_rules) {
+                    // Try matching remaining rules at every character position,
+                    // since ** can consume any number of characters including '/'.
+                    for i in 0..=file.len() {
+                        if self.string_matches(&file[i..], &remaining_rules) {
                             return true;
                         }
-                        // Remove the slash for the next attempt
-                        remainder = &remainder[1..];
+                    }
+
+                    // When ** is followed by a Slash (e.g. **/foo), also try
+                    // skipping the slash so that ** can match zero directories
+                    // (i.e. match at the root level).
+                    if let Some(GitIgnoreRuleElements::Slash) = remaining_rules.first() {
+                        let after_slash = &remaining_rules[1..];
+                        for i in 0..=file.len() {
+                            if self.string_matches(&file[i..], after_slash) {
+                                return true;
+                            }
+                        }
                     }
 
                     return false;
@@ -751,5 +745,27 @@ mod tests {
         // Test ignored files
         assert!(rules.rules[0].file_matches(dir.join("target/error.log").as_path(), &dir));
         assert!(rules.rules[0].file_matches(dir.join("target").as_path(), &dir));
+    }
+
+    #[test]
+    fn test_double_asterisk_without_slash() {
+        let dir = tempdir().unwrap();
+        let dir = dir.path();
+        let ignore_file_path = dir.join(".gitignore");
+        File::create(&ignore_file_path).unwrap();
+
+        // **.png should only match files ending in .png, not .puml
+        let rule = GitIgnoreRule::from_str("**.png").unwrap();
+        assert!(rule.file_matches(dir.join("image.png").as_path(), &dir));
+        assert!(rule.file_matches(dir.join("sub/dir/image.png").as_path(), &dir));
+        assert!(!rule.file_matches(dir.join("file.puml").as_path(), &dir));
+        assert!(!rule.file_matches(dir.join("sub/dir/file.puml").as_path(), &dir));
+        assert!(!rule.file_matches(dir.join("file.txt").as_path(), &dir));
+
+        // **.log should only match files ending in .log
+        let rule = GitIgnoreRule::from_str("**.log").unwrap();
+        assert!(rule.file_matches(dir.join("error.log").as_path(), &dir));
+        assert!(rule.file_matches(dir.join("sub/error.log").as_path(), &dir));
+        assert!(!rule.file_matches(dir.join("error.txt").as_path(), &dir));
     }
 }
