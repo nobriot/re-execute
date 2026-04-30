@@ -17,7 +17,7 @@ name = "rex"
 path = "src/main.rs"
 
 [dependencies]
-clap = { version = "4.6.0", features = ["derive", "wrap_help"] }
+clap = { version = "4.6.1", features = ["derive", "wrap_help"] }
 notify = "8.2.0"
 colored = "3.1.1"
 thiserror = "2.0.18"
