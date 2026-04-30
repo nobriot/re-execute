@@ -31,4 +31,6 @@ pub struct ExecCode {
     pub command_number: usize,
     /// Exit code
     pub exit_code: ExitCode,
+    /// Total execution duration (measured in the worker thread)
+    pub duration: Option<std::time::Duration>,
 }

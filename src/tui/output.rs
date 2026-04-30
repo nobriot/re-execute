@@ -1,6 +1,7 @@
 use crate::{
     args::{Args, FILE_SUBSTITUTION, FILES_SUBSTITUTION},
     command::{execution_report::ExecMessage, exit_code::get_exit_code_string},
+    tui::format_duration,
 };
 use chrono::Local;
 use colored::Colorize;
@@ -19,6 +20,8 @@ struct CommandCache {
     pub progress_bar: ProgressBar,
     pub file_list: String,
     pub time: Option<String>,
+    /// Formatted elapsed duration string (set when the command finishes)
+    pub elapsed_str: Option<String>,
 }
 
 /// Helper to manage the output on the screen while
@@ -137,7 +140,12 @@ impl Output {
         pb.set_style(Self::title_style());
         pb.set_message(format!("{}\n{}", Self::separator_line(None), self.title));
         pb.finish();
-        let cache = CommandCache { progress_bar: pb, file_list: String::from(""), time: None };
+        let cache = CommandCache {
+            progress_bar: pb,
+            file_list: String::from(""),
+            time: None,
+            elapsed_str: None,
+        };
         self.cache.insert(0, cache);
     }
 
@@ -277,6 +285,7 @@ impl Output {
             let old_prefix = old_cache.progress_bar.prefix().to_string();
             let file_list = old_cache.file_list.clone();
             let time = old_cache.time.clone();
+            let elapsed_str = old_cache.elapsed_str.clone();
 
             let pb = if index == 0 {
                 let pb = self.multi.insert(0, ProgressBar::no_length());
@@ -288,7 +297,11 @@ impl Output {
             } else {
                 let pb = self.multi.insert(index, ProgressBar::new_spinner());
                 if was_finished {
-                    pb.set_style(Self::progress_bar_finished_style());
+                    let style = match elapsed_str.as_deref() {
+                        Some(s) => Self::progress_bar_finished_style_with_duration(s),
+                        None => Self::progress_bar_finished_style(),
+                    };
+                    pb.set_style(style);
                 } else {
                     pb.set_style(Self::progress_bar_style());
                     // No enable_steady_tick; tick_spinners() drives animation.
@@ -301,7 +314,8 @@ impl Output {
                 pb
             };
 
-            self.cache.insert(index, CommandCache { progress_bar: pb, file_list, time });
+            self.cache
+                .insert(index, CommandCache { progress_bar: pb, file_list, time, elapsed_str });
         }
 
         self.add_help_bar();
@@ -330,7 +344,8 @@ impl Output {
                 // which races with our main-thread rendering.  Spinners are advanced
                 // manually by tick_spinners() from the 100 ms flush timer.
 
-                let c = CommandCache { progress_bar: pb, file_list: files, time };
+                let c =
+                    CommandCache { progress_bar: pb, file_list: files, time, elapsed_str: None };
                 self.cache.insert(index, c);
                 self.add_help_bar();
             }
@@ -357,7 +372,12 @@ impl Output {
                 let cache = cache.unwrap();
                 let pb = &cache.progress_bar;
 
-                pb.set_style(Self::progress_bar_finished_style());
+                let elapsed_str = report.duration.map(format_duration);
+                let style = match elapsed_str.as_deref() {
+                    Some(s) => Self::progress_bar_finished_style_with_duration(s),
+                    None => Self::progress_bar_finished_style(),
+                };
+                pb.set_style(style);
                 let prefix = if let Some(t) = &cache.time {
                     format!("#{}. {} {}", index, t, get_exit_code_string(report.exit_code))
                 } else {
@@ -365,6 +385,7 @@ impl Output {
                 };
                 pb.set_prefix(prefix.bright_black().to_string());
                 pb.set_message(format!("{}: {}", self.file_str.bold(), cache.file_list));
+                cache.elapsed_str = elapsed_str;
                 pb.finish();
             }
         }
@@ -399,6 +420,18 @@ impl Output {
         ProgressStyle::default_spinner()
             .template(format!("{{prefix}} {{wide_msg}} {}", "[{elapsed}] ".blue()).as_str())
             .expect("no finished template error")
+    }
+
+    /// Style for finished progress bars with a custom duration string baked in.
+    /// The duration string replaces indicatif's `{elapsed}` so the exact
+    /// measured time (µs / ms / s) is shown at the right.
+    fn progress_bar_finished_style_with_duration(duration_str: &str) -> ProgressStyle {
+        ProgressStyle::default_spinner()
+            .template(
+                format!("{{prefix}} {{wide_msg}} {}", format!("[{}] ", duration_str).blue())
+                    .as_str(),
+            )
+            .expect("no finished-with-duration template error")
     }
 
     fn get_local_time() -> String {

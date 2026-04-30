@@ -5,7 +5,10 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::thread::JoinHandle;
 
-use crossbeam_channel::{Receiver, RecvTimeoutError, Sender};
+#[cfg(unix)]
+use libc;
+
+use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, bounded};
 use std::process::ExitStatus;
 use std::sync::{
     Arc,
@@ -301,6 +304,8 @@ pub fn run_command(
     pipe_output: bool,
 ) {
     let mut child = command.spawn().expect("Command could not start");
+    let start = std::time::Instant::now();
+    let pid = child.id();
 
     // Send stdout updates to tx reports
     if pipe_output {
@@ -308,29 +313,39 @@ pub fn run_command(
         let _ = pipe_child_streams_to_events(&mut child, tx_clone, command_number);
     }
 
-    // Check atomic bool / try wait
-    let status: Option<ExitStatus> = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break Some(status),
-            Ok(None) => {
-                // Command is running, wait more
-            }
-            Err(_) => break None,
-        }
+    // Block on child exit in a dedicated thread so that fast commands are
+    // detected immediately rather than after a polling sleep.
+    let (wait_tx, wait_rx) = bounded::<Option<ExitStatus>>(1);
+    std::thread::spawn(move || {
+        let _ = wait_tx.send(child.wait().ok());
+    });
 
-        if abort.load(Ordering::SeqCst) {
-            let _ = child.kill();
+    // Poll for abort every 40 ms while waiting for the child to exit.
+    let status: Option<ExitStatus> = loop {
+        match wait_rx.recv_timeout(Duration::from_millis(40)) {
+            Ok(status) => break status,
+            Err(RecvTimeoutError::Timeout) => {
+                if abort.load(Ordering::SeqCst) {
+                    #[cfg(unix)]
+                    unsafe {
+                        libc::kill(pid as libc::pid_t, libc::SIGKILL);
+                    }
+                }
+            }
+            Err(RecvTimeoutError::Disconnected) => break None,
         }
-        // Avoid polling with too much excitement and avoid a CPU spin
-        std::thread::sleep(Duration::from_millis(40));
     };
+    let elapsed = start.elapsed();
 
     let exit_code: ExitCode = match status {
         Some(s) => exit_code::get_exit_code(s),
         None => None,
     };
 
-    send_msg_unchecked!(report_tx, ExecMessage::Finish(ExecCode { command_number, exit_code }));
+    send_msg_unchecked!(
+        report_tx,
+        ExecMessage::Finish(ExecCode { command_number, exit_code, duration: Some(elapsed) })
+    );
 }
 
 fn pipe_child_streams_to_events(
