@@ -12,4 +12,6 @@ pub enum Event {
     Term(TermEvents),
     // User wishes to pause/resume the program
     TogglePause,
+    // User wishes to abort ongoing commands
+    AbortOngoingCommands,
 }

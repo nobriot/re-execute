@@ -151,6 +151,10 @@ fn run() -> Result<()> {
                 paused = !paused;
                 output.set_pause(paused);
             }
+            Ok(Event::AbortOngoingCommands) => {
+                log::debug!("Request to abort command received");
+                command_queue_tx.send(QueueMessage::AbortOngoingCommands)?;
+            }
             Err(e) => {
                 return Err(runtime_error!(ChannelReceiveError, e.to_string()).into());
             }

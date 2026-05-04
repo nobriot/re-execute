@@ -154,13 +154,15 @@ impl Output {
         let separator = Self::separator_line(None);
         let pause_or_resume = if self.paused { "resume" } else { "pause" };
         let help_text = format!(
-            "  {} quit  {}  {} clear  {}  {} {}",
+            "  {} quit  {}  {} clear  {}  {} {}  {}  {} abort ongoing",
             "q/Ctrl-c".cyan().bold(),
             "·".bright_black(),
             "Ctrl-l".cyan().bold(),
             "·".bright_black(),
             "k".cyan().bold(),
             pause_or_resume,
+            "·".bright_black(),
+            "a".cyan().bold(),
         );
         let pb = self.multi.add(ProgressBar::no_length());
         pb.set_style(

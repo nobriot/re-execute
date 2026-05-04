@@ -34,6 +34,9 @@ pub fn monitor_key_inputs(tx: Sender<Event>) {
                     KeyCode::Char('k') => {
                         let _ = tx.send(Event::TogglePause);
                     }
+                    KeyCode::Char('a') => {
+                        let _ = tx.send(Event::AbortOngoingCommands);
+                    }
                     _ => {}
                 },
                 CrosstermEvent::Mouse(_) => {}

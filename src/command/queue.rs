@@ -175,6 +175,9 @@ impl Queue {
                     self.files.clear();
                     self.last_update = None;
                 }
+                Ok(QueueMessage::AbortOngoingCommands) => {
+                    self.abort_ongoing_commands();
+                }
                 Err(RecvTimeoutError::Timeout) => {}
                 Err(e) => {
                     log::error!("Channel error: {e:?}");
@@ -203,9 +206,19 @@ impl Queue {
         }
     }
 
+    /// Aborts ongoing commands if the program is configured to do so
+    #[inline]
     pub fn abort_ongoing_commands_if_needed(&mut self) {
         // Abort previous commands if needed
-        if self.abort_previous && !self.workers.is_empty() {
+        if self.abort_previous {
+            self.abort_ongoing_commands();
+        }
+    }
+
+    /// Aborts ongoing commands
+    pub fn abort_ongoing_commands(&mut self) {
+        // Abort previous commands if needed
+        if !self.workers.is_empty() {
             self.abort.store(true, Ordering::SeqCst);
             // We could probably use a rendezvous channel or something like that to make
             // sure the other threads have read the value.

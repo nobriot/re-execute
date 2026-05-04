@@ -11,4 +11,6 @@ pub enum QueueMessage {
     AddFile(PathBuf, PathBuf),
     /// Clears the queue
     Clear,
+    /// Signal running commands to stop
+    AbortOngoingCommands,
 }
